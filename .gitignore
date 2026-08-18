@@ -8,3 +8,4 @@ output/
 variant-board/
 .next-build-cache-stale/
 .superpowers/
+._*
