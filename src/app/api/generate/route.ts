@@ -115,25 +115,20 @@ export async function POST(request: Request): Promise<Response> {
       creativeIdea: parsed.data.creativeIdea
     });
     const imageProvider = getImageProvider();
-    // Limit upstream image edits to two at a time. Three simultaneous edits
-    // can be rejected by compatible relays with a generic network error.
-    const posters: typeof result.posters = [];
-    for (let index = 0; index < result.posters.length; index += 2) {
-      const batch = result.posters.slice(index, index + 2);
-      const generated = await Promise.all(batch.map(async (poster) => ({
-        ...poster,
-        image: await imageProvider.beautify({
-          image: poster.image,
-          mode: visualModes[poster.style],
-          poster: {
-            style: poster.style,
-            copy: poster.copy,
-            design: poster.design ?? resolveDesignBrief(poster.style, {})
-          }
-        })
-      })));
-      posters.push(...generated);
-    }
+    // Keep the three upstream requests in parallel: the public request must
+    // complete within the hosting platform's request window.
+    const posters = await Promise.all(result.posters.map(async (poster) => ({
+      ...poster,
+      image: await imageProvider.beautify({
+        image: poster.image,
+        mode: visualModes[poster.style],
+        poster: {
+          style: poster.style,
+          copy: poster.copy,
+          design: poster.design ?? resolveDesignBrief(poster.style, {})
+        }
+      })
+    })));
     return Response.json({ ...result, posters });
   } catch (error) {
     if (error instanceof Error && [GENERATION_FORMAT_ERROR, IMAGE_FORMAT_ERROR].includes(error.message)) {
