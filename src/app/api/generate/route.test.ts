@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { POST } from '@/app/api/generate/route';
+import { GET as GET_GENERATION_STATUS } from '@/app/api/generate/status/route';
 
 const MAX_IMAGE_DATA_URL_LENGTH = 10_000_000;
 const MAX_BODY_BYTES = 12 * 1024 * 1024;
@@ -10,6 +11,16 @@ function request(fields: Record<string, string>, extraHeaders: Record<string, st
   const form = new FormData();
   for (const [key, value] of Object.entries(fields)) form.append(key, value);
   return new Request('http://localhost/api/generate', { method: 'POST', headers: extraHeaders, body: form });
+}
+
+async function waitForJob(response: Response) {
+  const { jobId } = await response.json() as { jobId: string };
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const status = await GET_GENERATION_STATUS(new Request(`http://localhost/api/generate/status?jobId=${jobId}`));
+    if (status.status !== 202) return status;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error('job did not finish during test');
 }
 
 const uploadFields = { imageDataUrl: 'data:image/png;base64,AAAA', width: '1600', height: '900' };
@@ -83,10 +94,10 @@ describe('POST /api/generate', () => {
 
   it('does not expose an unknown provider value in a 502 error', async () => {
     vi.stubEnv('AI_PROVIDER', 'secret-provider-value');
-    const response = await POST(request(uploadFields));
+    const response = await waitForJob(await POST(request(uploadFields)));
     expect(response.status).toBe(502);
     const body = await response.json();
-    expect(body).toEqual({ error: '生成服务暂时不可用，请重试' });
+    expect(body).toMatchObject({ status: 'failed', error: '生成服务暂时不可用，请重试' });
     expect(JSON.stringify(body)).not.toContain('secret-provider-value');
   });
 
@@ -106,10 +117,10 @@ describe('POST /api/generate', () => {
     const cancelSpy = vi.spyOn(upstreamResponse.body!, 'cancel');
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(upstreamResponse));
 
-    const response = await POST(request(uploadFields));
+    const response = await waitForJob(await POST(request(uploadFields)));
     const body = await response.json();
     expect(response.status).toBe(502);
-    expect(body).toEqual({ error: '生成服务暂时不可用，请重试' });
+    expect(body).toMatchObject({ status: 'failed', error: '生成服务暂时不可用，请重试' });
     expect(JSON.stringify(body)).not.toContain('upstream secret body');
     expect(JSON.stringify(body)).not.toContain('secret-api-key');
     expect(JSON.stringify(body)).not.toContain('stack');
@@ -124,10 +135,10 @@ describe('POST /api/generate', () => {
     vi.stubEnv('AI_IMAGE_MODEL', 'image-model');
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('upstream invalid json', { status: 200 })));
 
-    const response = await POST(request(uploadFields));
+    const response = await waitForJob(await POST(request(uploadFields)));
     const body = await response.json();
     expect(response.status).toBe(502);
-    expect(body).toEqual({ error: '生成结果格式异常，请重试' });
+    expect(body).toMatchObject({ status: 'failed', error: '生成结果格式异常，请重试' });
     expect(JSON.stringify(body)).not.toContain('upstream invalid json');
     expect(JSON.stringify(body)).not.toContain('secret-api-key');
     expect(JSON.stringify(body)).not.toContain('stack');
@@ -137,10 +148,10 @@ describe('POST /api/generate', () => {
     vi.stubEnv('AI_PROVIDER', 'openai-compatible');
     vi.stubEnv('AI_API_KEY', 'secret-api-key');
 
-    const response = await POST(request(uploadFields));
+    const response = await waitForJob(await POST(request(uploadFields)));
     const body = await response.json();
     expect(response.status).toBe(502);
-    expect(body).toEqual({ error: '生成服务暂时不可用，请重试' });
+    expect(body).toMatchObject({ status: 'failed', error: '生成服务暂时不可用，请重试' });
     expect(JSON.stringify(body)).not.toContain('secret-api-key');
     expect(JSON.stringify(body)).not.toContain('stack');
   });

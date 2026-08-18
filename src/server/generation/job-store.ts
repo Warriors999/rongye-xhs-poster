@@ -1,4 +1,5 @@
 import type { GenerateResponse } from '@/server/ai/contracts';
+import type { GenerationInput } from '@/server/ai/provider';
 import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,6 +11,7 @@ export type GenerationJob = {
   status: GenerationJobStatus;
   result?: GenerateResponse;
   error?: string;
+  input?: GenerationInput;
   createdAt: number;
 };
 
@@ -35,11 +37,12 @@ async function pruneJobs(now = Date.now()) {
   }
 }
 
-export async function createGenerationJob(): Promise<GenerationJob> {
+export async function createGenerationJob(input: GenerationInput): Promise<GenerationJob> {
   await pruneJobs();
   const job: GenerationJob = {
     id: crypto.randomUUID(),
     status: 'processing',
+    input,
     createdAt: Date.now()
   };
   await writeFile(jobPath(job.id), JSON.stringify(job), 'utf8');
@@ -61,6 +64,7 @@ export async function completeGenerationJob(id: string, result: GenerateResponse
   job.status = 'complete';
   job.result = result;
   job.error = undefined;
+  job.input = undefined;
   await writeFile(jobPath(id), JSON.stringify(job), 'utf8');
 }
 
@@ -70,5 +74,6 @@ export async function failGenerationJob(id: string, error: string) {
   job.status = 'failed';
   job.error = error;
   job.result = undefined;
+  job.input = undefined;
   await writeFile(jobPath(id), JSON.stringify(job), 'utf8');
 }

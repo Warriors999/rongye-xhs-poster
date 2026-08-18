@@ -1,7 +1,7 @@
 import { generationRequestSchema } from '@/server/ai/contracts';
 import { GENERATION_FORMAT_ERROR, PROVIDER_UNAVAILABLE_ERROR } from '@/server/ai/openai-compatible-provider';
 import { IMAGE_FORMAT_ERROR, IMAGE_PROVIDER_UNAVAILABLE_ERROR } from '@/server/ai/image-provider';
-import { getImageProvider, getProvider } from '@/server/ai/provider';
+import { getImageProvider, getProvider, type GenerationInput } from '@/server/ai/provider';
 import { completeGenerationJob, createGenerationJob, failGenerationJob } from '@/server/generation/job-store';
 import type { BeautifyMode } from '@/domain/project';
 import { resolveDesignBrief } from '@/lib/design-system';
@@ -99,8 +99,9 @@ function publicErrorFor(error: unknown): string {
   return PROVIDER_UNAVAILABLE_ERROR;
 }
 
-async function processGenerationJob(jobId: string, result: Awaited<ReturnType<ReturnType<typeof getProvider>['generate']>>) {
+async function processGenerationJob(jobId: string, input: GenerationInput) {
   try {
+    const result = await getProvider().generate(input);
     await completeGenerationJob(jobId, await beautifyPosters(result));
   } catch (error) {
     console.error('[generate] background image generation failed:', publicErrorFor(error));
@@ -147,20 +148,21 @@ export async function POST(request: Request): Promise<Response> {
   if (!parsed.success) return errorResponse(400, '请求参数无效，请检查图片、关键词和禁止词');
 
   try {
-    const result = await getProvider().generate({
+    const input: GenerationInput = {
       image: { id: 'upload', dataUrl: parsed.data.imageDataUrl, width: parsed.data.width, height: parsed.data.height, source: 'upload' },
       keywords: parsed.data.keywords,
       forbiddenWords: parsed.data.forbiddenWords,
       creativeIdea: parsed.data.creativeIdea
-    });
-    // Keep the mock provider synchronous for tests and local previews. Real
-    // image generation can take longer than a browser/proxy request window,
-    // so return a job immediately after the fast vision/copy step.
+    };
+    // Keep the mock provider synchronous for tests and local previews. The
+    // complete real-provider pipeline can take longer than a browser/proxy
+    // request window, so return a job before any upstream call starts.
     if (process.env.AI_PROVIDER?.trim() !== 'mock') {
-      const job = await createGenerationJob();
-      void processGenerationJob(job.id, result);
+      const job = await createGenerationJob(input);
+      void processGenerationJob(job.id, input);
       return Response.json({ jobId: job.id, status: job.status }, { status: 202 });
     }
+    const result = await getProvider().generate(input);
     return Response.json(await beautifyPosters(result));
   } catch (error) {
     return errorResponse(502, publicErrorFor(error));
