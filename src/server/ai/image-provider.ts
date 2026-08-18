@@ -9,6 +9,7 @@ export const IMAGE_FORMAT_ERROR = '图片美化结果格式异常，请重试';
 // presenting a misleading network error to the user.
 const DEFAULT_TIMEOUT_MS = 300_000;
 const MAX_TRANSIENT_RETRIES = 1;
+const MAX_FORMAT_RETRIES = 1;
 
 export interface ImageBeautifyInput {
   image: ImageAsset;
@@ -85,49 +86,61 @@ export class ImageProvider implements ImageBeautifier {
     const model = this.env.AI_IMAGE_MODEL || 'gpt-image-2';
     if (!baseUrl || !apiKey) throw new Error(IMAGE_PROVIDER_UNAVAILABLE_ERROR);
 
-    const form = new FormData();
-    form.set('model', model);
-    form.set('image', dataUrlBlob(image.dataUrl), `${image.id}.jpg`);
-    form.set('prompt', poster ? buildPosterPrompt(poster) : [
+    const prompt = poster ? buildPosterPrompt(poster) : [
       '这是对用户上传照片的整体视觉美化，不是重新设计主体。',
       '必须保持上传照片中的同一个真实编织玩偶，保留它的身份；不得改变主体的外形、比例、姿态、颜色、针织纹理、缝线、关键配件和数量；不得替换、重绘、复制、增删主体。',
       prompts[mode],
       '画面要有真实材质、自然光影和清晰边缘；不要文字、logo、水印、人物、手指、额外玩偶或杂乱道具。'
-    ].join('\n'));
-    form.set('size', '1024x1536');
-    form.set('quality', 'auto');
-    form.set('output_format', 'png');
+    ].join('\n');
 
-    let response: Response;
-    try {
-      response = await this.fetchWithRetry(`${baseUrl.replace(/\/$/, '')}/images/edits`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}` },
-        body: form
-      });
-    } catch {
-      throw new Error(IMAGE_PROVIDER_UNAVAILABLE_ERROR);
-    }
-    if (!response.ok) {
-      try { await response.body?.cancel(); } catch { /* keep upstream details private */ }
-      throw new Error(IMAGE_PROVIDER_UNAVAILABLE_ERROR);
+    const createForm = () => {
+      const form = new FormData();
+      form.set('model', model);
+      form.set('image', dataUrlBlob(image.dataUrl), `${image.id}.jpg`);
+      form.set('prompt', prompt);
+      form.set('size', '1024x1536');
+      form.set('quality', 'auto');
+      form.set('output_format', 'png');
+      return form;
+    };
+
+    for (let attempt = 0; attempt <= MAX_FORMAT_RETRIES; attempt += 1) {
+      let response: Response;
+      try {
+        response = await this.fetchWithRetry(`${baseUrl.replace(/\/$/, '')}/images/edits`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${apiKey}` },
+          body: createForm()
+        });
+      } catch {
+        throw new Error(IMAGE_PROVIDER_UNAVAILABLE_ERROR);
+      }
+      if (!response.ok) {
+        try { await response.body?.cancel(); } catch { /* keep upstream details private */ }
+        throw new Error(IMAGE_PROVIDER_UNAVAILABLE_ERROR);
+      }
+
+      try {
+        const body = await response.json() as { data?: Array<{ b64_json?: unknown }> };
+        const encoded = body.data?.[0]?.b64_json;
+        if (typeof encoded !== 'string' || !encoded.trim()) throw new Error(IMAGE_FORMAT_ERROR);
+        return {
+          ...image,
+          id: `${image.id}-${mode}`,
+          dataUrl: `data:image/png;base64,${encoded}`,
+          source: 'beautified',
+          mode
+        };
+      } catch (error) {
+        if (error instanceof Error && error.message === IMAGE_FORMAT_ERROR && attempt < MAX_FORMAT_RETRIES) {
+          continue;
+        }
+        if (error instanceof Error && error.message === IMAGE_FORMAT_ERROR) throw error;
+        throw new Error(IMAGE_FORMAT_ERROR);
+      }
     }
 
-    try {
-      const body = await response.json() as { data?: Array<{ b64_json?: unknown }> };
-      const encoded = body.data?.[0]?.b64_json;
-      if (typeof encoded !== 'string' || !encoded.trim()) throw new Error(IMAGE_FORMAT_ERROR);
-      return {
-        ...image,
-        id: `${image.id}-${mode}`,
-        dataUrl: `data:image/png;base64,${encoded}`,
-        source: 'beautified',
-        mode
-      };
-    } catch (error) {
-      if (error instanceof Error && error.message === IMAGE_FORMAT_ERROR) throw error;
-      throw new Error(IMAGE_FORMAT_ERROR);
-    }
+    throw new Error(IMAGE_FORMAT_ERROR);
   }
 
   private async fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {

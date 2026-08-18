@@ -215,7 +215,7 @@ describe('GeminiProvider', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it('retries one transient upstream response but does not retry a format error', async () => {
+  it('retries one transient upstream response and gives up after one format retry', async () => {
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(new Response('temporarily unavailable', { status: 503 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
@@ -236,6 +236,21 @@ describe('GeminiProvider', () => {
     });
 
     await expect(invalidProvider.generate(input)).rejects.toThrow('生成结果格式异常，请重试');
-    expect(invalidFetch).toHaveBeenCalledTimes(1);
+    expect(invalidFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries once when Gemini returns a successful response without candidate text', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ candidates: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        candidates: [{ content: { parts: [{ text: JSON.stringify(completion) }] } }]
+      }), { status: 200 }));
+    const provider = new GeminiProvider({
+      env: { AI_VISION_BASE_URL: 'https://apinebula.example', AI_VISION_API_KEY: 'vision-secret', AI_VISION_MODEL: 'gemini-3.1-flash-lite' },
+      fetchImpl
+    });
+
+    await expect(provider.generate(input)).resolves.toMatchObject({ posters: expect.any(Array) });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 });

@@ -64,6 +64,23 @@ describe('ImageProvider', () => {
     await expect(malformed.beautify({ image, mode: 'craft' })).rejects.toThrow(IMAGE_FORMAT_ERROR);
   });
 
+  it('retries once when the upstream returns a successful response without image data', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ b64_json: 'recovered-image' }] }), { status: 200 }));
+    const provider = new ImageProvider({
+      env: { AI_IMAGE_BASE_URL: 'https://example.test/v1', AI_IMAGE_API_KEY: 'secret', AI_IMAGE_MODEL: 'gpt-image-2' },
+      fetchImpl
+    });
+
+    await expect(provider.beautify({ image, mode: 'craft' })).resolves.toMatchObject({
+      dataUrl: 'data:image/png;base64,recovered-image',
+      source: 'beautified',
+      mode: 'craft'
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it('sends the structured design brief and exact Chinese copy for a complete micro-poster', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       data: [{ b64_json: 'complete-poster' }]

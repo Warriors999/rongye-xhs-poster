@@ -8,6 +8,7 @@ const PROVIDER_UNAVAILABLE_ERROR = '生成服务暂时不可用，请重试';
 const GENERATION_FORMAT_ERROR = '生成结果格式异常，请重试';
 const DEFAULT_TIMEOUT_MS = 60_000;
 const MAX_TRANSIENT_RETRIES = 1;
+const MAX_FORMAT_RETRIES = 1;
 const MAX_TEXT_LENGTH = 200;
 const MAX_TAG_LENGTH = 40;
 const MAX_COPY_TITLE_LENGTH = 36;
@@ -224,30 +225,34 @@ export class GeminiProvider implements Provider {
       generationConfig: { responseMimeType: 'application/json' }
     };
 
-    let response: Response;
-    try {
-      response = await this.fetchWithRetry(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-    } catch {
-      throw new Error(PROVIDER_UNAVAILABLE_ERROR);
-    }
-    if (!response.ok) {
-      try { await response.body?.cancel(); } catch { /* keep upstream details private */ }
-      throw new Error(PROVIDER_UNAVAILABLE_ERROR);
+    for (let attempt = 0; attempt <= MAX_FORMAT_RETRIES; attempt += 1) {
+      let response: Response;
+      try {
+        response = await this.fetchWithRetry(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+      } catch {
+        throw new Error(PROVIDER_UNAVAILABLE_ERROR);
+      }
+      if (!response.ok) {
+        try { await response.body?.cancel(); } catch { /* keep upstream details private */ }
+        throw new Error(PROVIDER_UNAVAILABLE_ERROR);
+      }
+
+      try {
+        const envelope = await response.json() as GeminiEnvelope;
+        const text = envelope.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('').trim();
+        if (!text) throw new Error(GENERATION_FORMAT_ERROR);
+        return normalizeResponse(parseJsonObject(text), input.image);
+      } catch (error) {
+        if (attempt < MAX_FORMAT_RETRIES) continue;
+        throw new Error(GENERATION_FORMAT_ERROR);
+      }
     }
 
-    try {
-      const envelope = await response.json() as GeminiEnvelope;
-      const text = envelope.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('').trim();
-      if (!text) throw new Error(GENERATION_FORMAT_ERROR);
-      return normalizeResponse(parseJsonObject(text), input.image);
-    } catch (error) {
-      if (error instanceof Error && error.message === GENERATION_FORMAT_ERROR) throw error;
-      throw new Error(GENERATION_FORMAT_ERROR);
-    }
+    throw new Error(GENERATION_FORMAT_ERROR);
   }
 
   private async fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
