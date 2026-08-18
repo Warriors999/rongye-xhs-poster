@@ -2,6 +2,7 @@ import { generationRequestSchema } from '@/server/ai/contracts';
 import { GENERATION_FORMAT_ERROR, PROVIDER_UNAVAILABLE_ERROR } from '@/server/ai/openai-compatible-provider';
 import { IMAGE_FORMAT_ERROR, IMAGE_PROVIDER_UNAVAILABLE_ERROR } from '@/server/ai/image-provider';
 import { getImageProvider, getProvider } from '@/server/ai/provider';
+import { completeGenerationJob, createGenerationJob, failGenerationJob } from '@/server/generation/job-store';
 import type { BeautifyMode } from '@/domain/project';
 import { resolveDesignBrief } from '@/lib/design-system';
 
@@ -69,6 +70,44 @@ const visualModes: Record<'cute' | 'daily' | 'series', BeautifyMode> = {
   series: 'original'
 };
 
+async function beautifyPosters(result: Awaited<ReturnType<ReturnType<typeof getProvider>['generate']>>) {
+  const imageProvider = getImageProvider();
+  // Keep all three upstream image requests concurrent. The long-running work
+  // is performed outside the browser-facing request by processGenerationJob.
+  const posters = await Promise.all(result.posters.map(async (poster) => ({
+    ...poster,
+    image: await imageProvider.beautify({
+      image: poster.image,
+      mode: visualModes[poster.style],
+      poster: {
+        style: poster.style,
+        copy: poster.copy,
+        design: poster.design ?? resolveDesignBrief(poster.style, {})
+      }
+    })
+  })));
+  return { ...result, posters };
+}
+
+function publicErrorFor(error: unknown): string {
+  if (error instanceof Error && [GENERATION_FORMAT_ERROR, IMAGE_FORMAT_ERROR].includes(error.message)) {
+    return GENERATION_FORMAT_ERROR;
+  }
+  if (error instanceof Error && error.message === IMAGE_PROVIDER_UNAVAILABLE_ERROR) {
+    return IMAGE_PROVIDER_UNAVAILABLE_ERROR;
+  }
+  return PROVIDER_UNAVAILABLE_ERROR;
+}
+
+async function processGenerationJob(jobId: string, result: Awaited<ReturnType<ReturnType<typeof getProvider>['generate']>>) {
+  try {
+    completeGenerationJob(jobId, await beautifyPosters(result));
+  } catch (error) {
+    console.error('[generate] background image generation failed:', publicErrorFor(error));
+    failGenerationJob(jobId, publicErrorFor(error));
+  }
+}
+
 export async function POST(request: Request): Promise<Response> {
   try {
     contentLengthFromHeader(request.headers.get('content-length'));
@@ -114,29 +153,16 @@ export async function POST(request: Request): Promise<Response> {
       forbiddenWords: parsed.data.forbiddenWords,
       creativeIdea: parsed.data.creativeIdea
     });
-    const imageProvider = getImageProvider();
-    // Keep the three upstream requests in parallel: the public request must
-    // complete within the hosting platform's request window.
-    const posters = await Promise.all(result.posters.map(async (poster) => ({
-      ...poster,
-      image: await imageProvider.beautify({
-        image: poster.image,
-        mode: visualModes[poster.style],
-        poster: {
-          style: poster.style,
-          copy: poster.copy,
-          design: poster.design ?? resolveDesignBrief(poster.style, {})
-        }
-      })
-    })));
-    return Response.json({ ...result, posters });
+    // Keep the mock provider synchronous for tests and local previews. Real
+    // image generation can take longer than a browser/proxy request window,
+    // so return a job immediately after the fast vision/copy step.
+    if (process.env.AI_PROVIDER?.trim() !== 'mock') {
+      const job = createGenerationJob();
+      void processGenerationJob(job.id, result);
+      return Response.json({ jobId: job.id, status: job.status }, { status: 202 });
+    }
+    return Response.json(await beautifyPosters(result));
   } catch (error) {
-    if (error instanceof Error && [GENERATION_FORMAT_ERROR, IMAGE_FORMAT_ERROR].includes(error.message)) {
-      return errorResponse(502, GENERATION_FORMAT_ERROR);
-    }
-    if (error instanceof Error && error.message === IMAGE_PROVIDER_UNAVAILABLE_ERROR) {
-      return errorResponse(502, IMAGE_PROVIDER_UNAVAILABLE_ERROR);
-    }
-    return errorResponse(502, PROVIDER_UNAVAILABLE_ERROR);
+    return errorResponse(502, publicErrorFor(error));
   }
 }

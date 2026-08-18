@@ -33,6 +33,34 @@ async function readGenerationResponse(response: Response): Promise<GenerationRes
   return body as GenerationResult;
 }
 
+async function waitForGenerationJob(jobId: string, signal: AbortSignal): Promise<GenerationResult> {
+  while (true) {
+    const response = await fetch(`/api/generate/status?jobId=${encodeURIComponent(jobId)}`, { signal });
+    const body = await response.json().catch(() => null) as { status?: string; error?: string };
+    if (body?.status === 'processing') {
+      await new Promise<void>((resolve, reject) => {
+        const timer = window.setTimeout(resolve, 2000);
+        signal.addEventListener('abort', () => {
+          window.clearTimeout(timer);
+          reject(new DOMException('The operation was aborted.', 'AbortError'));
+        }, { once: true });
+      });
+      continue;
+    }
+    if (!response.ok) throw new Error(body?.error || '生成服务暂时不可用，请重试');
+    if (body?.status !== 'complete') throw new Error('生成结果格式异常，请重试');
+    return body as unknown as GenerationResult;
+  }
+}
+
+async function requestGeneration(form: FormData, signal: AbortSignal): Promise<GenerationResult> {
+  const response = await fetch('/api/generate', { method: 'POST', body: form, signal });
+  if (response.status !== 202) return readGenerationResponse(response);
+  const body = await response.json().catch(() => null) as { jobId?: string };
+  if (!body?.jobId) throw new Error('生成任务创建失败，请重试');
+  return waitForGenerationJob(body.jobId, signal);
+}
+
 function appendGenerationInput(form: FormData, upload: ImageAsset, keywords: string, forbiddenWords: string, creativeIdea: string) {
   form.append('imageDataUrl', upload.dataUrl);
   form.append('width', String(upload.width));
@@ -80,12 +108,7 @@ export function GenerationScreen() {
       const form = new FormData();
       appendGenerationInput(form, input.upload, input.keywords, input.forbiddenWords, input.creativeIdea);
 
-      void fetch('/api/generate', {
-        method: 'POST',
-        body: form,
-        signal: controller.signal
-      })
-        .then(readGenerationResponse)
+      void requestGeneration(form, controller.signal)
         .then((generation) => {
           if (!controller.signal.aborted) setGeneration(generation);
         })
