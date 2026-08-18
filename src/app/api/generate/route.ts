@@ -115,18 +115,24 @@ export async function POST(request: Request): Promise<Response> {
       creativeIdea: parsed.data.creativeIdea
     });
     const imageProvider = getImageProvider();
-    const posters = await Promise.all(result.posters.map(async (poster) => ({
-      ...poster,
-      image: await imageProvider.beautify({
-        image: poster.image,
-        mode: visualModes[poster.style],
-        poster: {
-          style: poster.style,
-          copy: poster.copy,
-          design: poster.design ?? resolveDesignBrief(poster.style, {})
-        }
-      })
-    })));
+    // The image relay may rate-limit concurrent edits. Generate sequentially
+    // so a normal three-poster request does not turn into a generic network
+    // error after the upstream rejects parallel work.
+    const posters = [];
+    for (const poster of result.posters) {
+      posters.push({
+        ...poster,
+        image: await imageProvider.beautify({
+          image: poster.image,
+          mode: visualModes[poster.style],
+          poster: {
+            style: poster.style,
+            copy: poster.copy,
+            design: poster.design ?? resolveDesignBrief(poster.style, {})
+          }
+        })
+      });
+    }
     return Response.json({ ...result, posters });
   } catch (error) {
     if (error instanceof Error && [GENERATION_FORMAT_ERROR, IMAGE_FORMAT_ERROR].includes(error.message)) {

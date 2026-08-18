@@ -4,7 +4,10 @@ import type { ProviderDependencies } from './provider';
 export const IMAGE_PROVIDER_UNAVAILABLE_ERROR = '图片美化服务暂时不可用，请重试';
 export const IMAGE_FORMAT_ERROR = '图片美化结果格式异常，请重试';
 
-const DEFAULT_TIMEOUT_MS = 120_000;
+// Image editing can legitimately take several minutes on the upstream relay.
+// Keep the request alive long enough for the provider to finish instead of
+// presenting a misleading network error to the user.
+const DEFAULT_TIMEOUT_MS = 300_000;
 const MAX_TRANSIENT_RETRIES = 1;
 
 export interface ImageBeautifyInput {
