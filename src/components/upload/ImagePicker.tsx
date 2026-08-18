@@ -55,7 +55,7 @@ export function ImagePicker() {
       <StatusBanner message={error} />
       <label className="visually-hidden">
         从相册选择照片
-        <input ref={albumInput} type="file" accept="image/*" aria-label="从相册选择照片" onChange={handleChange} />
+        <input ref={albumInput} type="file" accept="image/jpeg,image/png,image/webp" aria-label="从相册选择照片" onChange={handleChange} />
       </label>
       <label className="visually-hidden">
         拍照使用

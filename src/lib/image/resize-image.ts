@@ -1,11 +1,8 @@
 import type { ImageAsset } from '@/domain/project';
 import { createId } from '@/lib/ids';
 
-// Modern phone photos can be 15–30MB before compression. Validate the decoded
-// result instead of rejecting a perfectly usable camera photo too early.
-const MAX_FILE_SIZE = 40 * 1024 * 1024;
+const MAX_FILE_SIZE = 12 * 1024 * 1024;
 const MAX_EDGE = 1600;
-const TARGET_DATA_URL_LENGTH = 2_400_000;
 const SUPPORTED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 type DecodedImage = {
@@ -53,7 +50,7 @@ async function decode(file: File): Promise<DecodedImage> {
 }
 
 export async function normalizeImage(file: File): Promise<ImageAsset> {
-  if (file.size > MAX_FILE_SIZE) throw new Error('图片不能超过 40MB');
+  if (file.size > MAX_FILE_SIZE) throw new Error('图片不能超过 12MB');
   if (!SUPPORTED_TYPES.has(file.type)) throw new Error('请选择 JPG、PNG 或 WebP 图片');
 
   let decoded: DecodedImage;
@@ -75,14 +72,7 @@ export async function normalizeImage(file: File): Promise<ImageAsset> {
     canvas.width = width;
     canvas.height = height;
     decoded.draw(context, width, height);
-    // Always send a JPEG and reduce quality until the mobile upload is small
-    // enough for Railway's request body limit.
-    let quality = 0.88;
-    let dataUrl = canvas.toDataURL('image/jpeg', quality);
-    while (dataUrl.length > TARGET_DATA_URL_LENGTH && quality > 0.58) {
-      quality -= 0.08;
-      dataUrl = canvas.toDataURL('image/jpeg', quality);
-    }
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
 
     return { id: createId('upload'), dataUrl, width, height, source: 'upload' };
   } catch {
