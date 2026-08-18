@@ -1,0 +1,11 @@
+{
+  "name": "针织小物｜小红书微海报",
+  "short_name": "针织小物",
+  "lang": "zh-CN",
+  "description": "把玩偶照片变成温柔的小红书微海报。",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fffaF4",
+  "theme_color": "#d87568",
+  "icons": []
+}
