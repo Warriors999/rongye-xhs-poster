@@ -101,10 +101,10 @@ function publicErrorFor(error: unknown): string {
 
 async function processGenerationJob(jobId: string, result: Awaited<ReturnType<ReturnType<typeof getProvider>['generate']>>) {
   try {
-    completeGenerationJob(jobId, await beautifyPosters(result));
+    await completeGenerationJob(jobId, await beautifyPosters(result));
   } catch (error) {
     console.error('[generate] background image generation failed:', publicErrorFor(error));
-    failGenerationJob(jobId, publicErrorFor(error));
+    await failGenerationJob(jobId, publicErrorFor(error));
   }
 }
 
@@ -157,7 +157,7 @@ export async function POST(request: Request): Promise<Response> {
     // image generation can take longer than a browser/proxy request window,
     // so return a job immediately after the fast vision/copy step.
     if (process.env.AI_PROVIDER?.trim() !== 'mock') {
-      const job = createGenerationJob();
+      const job = await createGenerationJob();
       void processGenerationJob(job.id, result);
       return Response.json({ jobId: job.id, status: job.status }, { status: 202 });
     }
