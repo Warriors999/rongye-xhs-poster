@@ -20,7 +20,7 @@ describe('normalizeImage', () => {
     await expect(normalizeImage(file)).rejects.toThrow('图片不能超过 12MB');
   });
 
-  it('scales a decoded image to the 1600px long edge and exports JPEG quality 0.92', async () => {
+  it('scales a decoded image to the 1200px long edge and exports a compact JPEG', async () => {
     const toDataURL = vi.fn(() => 'data:image/jpeg;base64,normalized');
     const drawImage = vi.fn();
     const canvas = {
@@ -38,9 +38,9 @@ describe('normalizeImage', () => {
 
     const asset = await normalizeImage(new File(['photo'], 'doll.jpg', { type: 'image/jpeg' }));
 
-    expect(asset).toMatchObject({ width: 1600, height: 800, source: 'upload' });
-    expect(toDataURL).toHaveBeenCalledWith('image/jpeg', 0.92);
-    expect(drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 1600, 800);
+    expect(asset).toMatchObject({ width: 1200, height: 600, source: 'upload' });
+    expect(toDataURL).toHaveBeenCalledWith('image/jpeg', 0.82);
+    expect(drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 1200, 600);
   });
 
   it('reports a readable error when image decoding fails', async () => {
@@ -88,7 +88,7 @@ describe('normalizeImage', () => {
 
     const asset = await normalizeImage(new File(['photo'], 'doll.jpg', { type: 'image/jpeg' }));
 
-    expect(asset).toMatchObject({ width: 1600, height: 800, source: 'upload' });
+    expect(asset).toMatchObject({ width: 1200, height: 600, source: 'upload' });
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:test');
   });
 

@@ -27,7 +27,7 @@ describe('ImageProvider', () => {
     const result = await provider.beautify({ image, mode: 'studio' });
 
     expect(result).toMatchObject({
-      dataUrl: 'data:image/png;base64,iVBORw0KGgoAAA',
+      dataUrl: 'data:image/jpeg;base64,iVBORw0KGgoAAA',
       width: 898,
       height: 1600,
       source: 'beautified',
@@ -46,6 +46,8 @@ describe('ImageProvider', () => {
     const body = request.body as FormData;
     expect(body.get('model')).toBe('gpt-image-2');
     expect(body.get('size')).toBe('1024x1536');
+    expect(body.get('output_format')).toBe('jpeg');
+    expect(body.get('output_compression')).toBe('80');
     expect(body.get('prompt')).toEqual(expect.stringContaining('同一个真实编织玩偶')); 
     expect(body.get('prompt')).toEqual(expect.stringContaining('不得改变主体的外形、比例、姿态、颜色、针织纹理'));
   });
@@ -74,7 +76,7 @@ describe('ImageProvider', () => {
     });
 
     await expect(provider.beautify({ image, mode: 'craft' })).resolves.toMatchObject({
-      dataUrl: 'data:image/png;base64,recovered-image',
+      dataUrl: 'data:image/jpeg;base64,recovered-image',
       source: 'beautified',
       mode: 'craft'
     });

@@ -36,7 +36,7 @@ async function readGenerationResponse(response: Response): Promise<GenerationRes
 async function waitForGenerationJob(jobId: string, signal: AbortSignal): Promise<GenerationResult> {
   while (true) {
     const response = await fetch(`/api/generate/status?jobId=${encodeURIComponent(jobId)}`, { signal });
-    const body = await response.json().catch(() => null) as { status?: string; error?: string };
+    const body = await response.json().catch(() => null) as { status?: string; error?: string; imageUrls?: string[] };
     if (body?.status === 'processing') {
       await new Promise<void>((resolve, reject) => {
         const timer = window.setTimeout(resolve, 2000);
@@ -49,7 +49,28 @@ async function waitForGenerationJob(jobId: string, signal: AbortSignal): Promise
     }
     if (!response.ok) throw new Error(body?.error || '生成服务暂时不可用，请重试');
     if (body?.status !== 'complete') throw new Error('生成结果格式异常，请重试');
-    return body as unknown as GenerationResult;
+    if (!Array.isArray(body.imageUrls)) return body as unknown as GenerationResult;
+
+    const result = body as unknown as GenerationResult & { imageUrls: string[] };
+    if (result.imageUrls.length !== result.posters.length) throw new Error('生成结果格式异常，请重试');
+    const dataUrls = await Promise.all(result.imageUrls.map(async (imageUrl) => {
+      const imageResponse = await fetch(imageUrl, { signal });
+      if (!imageResponse.ok) throw new Error('生成图片暂时不可用，请重试');
+      const blob = await imageResponse.blob();
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('生成图片格式异常，请重试'));
+        reader.onerror = () => reject(new Error('生成图片格式异常，请重试'));
+        reader.readAsDataURL(blob);
+      });
+    }));
+    return {
+      analysis: result.analysis,
+      posters: result.posters.map((poster, index) => ({
+        ...poster,
+        image: { ...poster.image, dataUrl: dataUrls[index] }
+      }))
+    };
   }
 }
 

@@ -2,7 +2,11 @@ import type { ImageAsset } from '@/domain/project';
 import { createId } from '@/lib/ids';
 
 const MAX_FILE_SIZE = 12 * 1024 * 1024;
-const MAX_EDGE = 1600;
+// Keep the browser-facing multipart request below the size where the Railway
+// edge starts holding the upload instead of forwarding it to Next.js.
+const MAX_EDGE = 1200;
+const MAX_DATA_URL_LENGTH = 140_000;
+const JPEG_QUALITIES = [0.82, 0.72, 0.62] as const;
 const SUPPORTED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 type DecodedImage = {
@@ -72,7 +76,11 @@ export async function normalizeImage(file: File): Promise<ImageAsset> {
     canvas.width = width;
     canvas.height = height;
     decoded.draw(context, width, height);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    let dataUrl = canvas.toDataURL('image/jpeg', JPEG_QUALITIES[0]);
+    for (const quality of JPEG_QUALITIES.slice(1)) {
+      if (dataUrl.length <= MAX_DATA_URL_LENGTH) break;
+      dataUrl = canvas.toDataURL('image/jpeg', quality);
+    }
 
     return { id: createId('upload'), dataUrl, width, height, source: 'upload' };
   } catch {

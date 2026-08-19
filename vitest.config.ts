@@ -9,7 +9,7 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./tests/setup.ts'],
     css: true,
-    exclude: ['node_modules', 'tests/e2e/**']
+    exclude: ['node_modules', 'tests/e2e/**', '**/._*']
   },
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) }

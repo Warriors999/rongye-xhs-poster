@@ -1,8 +1,5 @@
 import type { GenerateResponse } from '@/server/ai/contracts';
 import type { GenerationInput } from '@/server/ai/provider';
-import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
 
 export type GenerationJobStatus = 'processing' | 'complete' | 'failed';
 
@@ -16,46 +13,44 @@ export type GenerationJob = {
 };
 
 const JOB_TTL_MS = 30 * 60 * 1000;
-const JOB_DIRECTORY = path.join(os.tmpdir(), 'rongye-xhs-poster-jobs');
+const jobs = new Map<string, GenerationJob>();
 
-function jobPath(id: string) {
-  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error('invalid job id');
-  return path.join(JOB_DIRECTORY, `${id}.json`);
+function pruneJobs(now = Date.now()) {
+  for (const [id, job] of jobs) {
+    if (now - job.createdAt > JOB_TTL_MS) jobs.delete(id);
+  }
 }
 
-async function pruneJobs(now = Date.now()) {
-  await mkdir(JOB_DIRECTORY, { recursive: true });
-  for (const name of await readdir(JOB_DIRECTORY)) {
-    if (!name.endsWith('.json')) continue;
-    const file = path.join(JOB_DIRECTORY, name);
-    try {
-      const job = JSON.parse(await readFile(file, 'utf8')) as GenerationJob;
-      if (now - job.createdAt > JOB_TTL_MS) await unlink(file);
-    } catch {
-      // Ignore a file being written or removed by another request.
-    }
+function parseImageDataUrl(dataUrl: string): { mimeType: string; bytes: Uint8Array } | undefined {
+  const match = dataUrl.match(/^data:([^,]+),([\s\S]*)$/);
+  if (!match) return undefined;
+  try {
+    const metadata = match[1].split(';');
+    const mimeType = metadata[0] || 'application/octet-stream';
+    const bytes = metadata.includes('base64')
+      ? Uint8Array.from(Buffer.from(match[2], 'base64'))
+      : new TextEncoder().encode(decodeURIComponent(match[2]));
+    return { mimeType, bytes };
+  } catch {
+    return undefined;
   }
 }
 
 export async function createGenerationJob(input: GenerationInput): Promise<GenerationJob> {
-  await pruneJobs();
+  pruneJobs();
   const job: GenerationJob = {
     id: crypto.randomUUID(),
     status: 'processing',
     input,
     createdAt: Date.now()
   };
-  await writeFile(jobPath(job.id), JSON.stringify(job), 'utf8');
+  jobs.set(job.id, job);
   return job;
 }
 
 export async function getGenerationJob(id: string): Promise<GenerationJob | undefined> {
-  await pruneJobs();
-  try {
-    return JSON.parse(await readFile(jobPath(id), 'utf8')) as GenerationJob;
-  } catch {
-    return undefined;
-  }
+  pruneJobs();
+  return jobs.get(id);
 }
 
 export async function completeGenerationJob(id: string, result: GenerateResponse) {
@@ -65,7 +60,7 @@ export async function completeGenerationJob(id: string, result: GenerateResponse
   job.result = result;
   job.error = undefined;
   job.input = undefined;
-  await writeFile(jobPath(id), JSON.stringify(job), 'utf8');
+  jobs.set(id, job);
 }
 
 export async function failGenerationJob(id: string, error: string) {
@@ -75,5 +70,13 @@ export async function failGenerationJob(id: string, error: string) {
   job.error = error;
   job.result = undefined;
   job.input = undefined;
-  await writeFile(jobPath(id), JSON.stringify(job), 'utf8');
+  jobs.set(id, job);
+}
+
+export async function getGenerationJobImage(id: string, index: number): Promise<{ mimeType: string; bytes: Uint8Array } | undefined> {
+  if (!Number.isInteger(index) || index < 0 || index > 2) return undefined;
+  const job = await getGenerationJob(id);
+  if (job?.status !== 'complete') return undefined;
+  const dataUrl = job.result?.posters[index]?.image.dataUrl;
+  return typeof dataUrl === 'string' ? parseImageDataUrl(dataUrl) : undefined;
 }

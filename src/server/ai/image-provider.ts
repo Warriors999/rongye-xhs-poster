@@ -10,6 +10,8 @@ export const IMAGE_FORMAT_ERROR = '图片美化结果格式异常，请重试';
 const DEFAULT_TIMEOUT_MS = 300_000;
 const MAX_TRANSIENT_RETRIES = 1;
 const MAX_FORMAT_RETRIES = 1;
+const OUTPUT_FORMAT = 'jpeg';
+const OUTPUT_COMPRESSION = '80';
 
 export interface ImageBeautifyInput {
   image: ImageAsset;
@@ -100,7 +102,11 @@ export class ImageProvider implements ImageBeautifier {
       form.set('prompt', prompt);
       form.set('size', '1024x1536');
       form.set('quality', 'auto');
-      form.set('output_format', 'png');
+      // Three 1024x1536 PNGs make the job status response several megabytes
+      // larger than a browser/Railway connection can reliably carry. JPEG is
+      // sufficient for poster previews and keeps the completed job portable.
+      form.set('output_format', OUTPUT_FORMAT);
+      form.set('output_compression', OUTPUT_COMPRESSION);
       return form;
     };
 
@@ -127,7 +133,7 @@ export class ImageProvider implements ImageBeautifier {
         return {
           ...image,
           id: `${image.id}-${mode}`,
-          dataUrl: `data:image/png;base64,${encoded}`,
+          dataUrl: `data:image/jpeg;base64,${encoded}`,
           source: 'beautified',
           mode
         };
