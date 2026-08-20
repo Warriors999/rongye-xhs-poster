@@ -1,0 +1,11 @@
+.env.local
+.env*.local
+.next/
+node_modules/
+*.tsbuildinfo
+test-results/
+output/
+variant-board/
+.next-build-cache-stale/
+.superpowers/
+.worktrees/

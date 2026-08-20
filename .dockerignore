@@ -1,0 +1,17 @@
+.git
+.git/**
+.worktrees
+.worktrees/**
+node_modules
+node_modules/**
+.next
+.next/**
+.env*
+test-results
+test-results/**
+output
+output/**
+coverage
+coverage/**
+*.log
+.DS_Store

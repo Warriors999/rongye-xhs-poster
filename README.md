@@ -1,0 +1,180 @@
+# 绒页｜小红书微海报
+
+手机端针织玩偶微海报工具：上传真实针织玩偶照片和简单想法，生成带有设计和排版的 3:4 小红书微海报。
+
+当前主流程是：
+
+```text
+上传真实针织玩偶 + 创作想法
+→ 参考研究或服务端内置 fallback
+→ 动态设计三个方向（生活方式、故事叙事、编辑海报）
+→ 生成三张完整微海报
+→ 质量检查
+→ 直接下载单张或全部海报
+```
+
+生成结果已经包含背景、视觉元素、中文文案和排版，当前主流程不进入旧编辑器，下载的就是完整成品。
+
+## 启动
+
+```bash
+pnpm install
+cp .env.example .env.local
+pnpm dev
+```
+
+默认 `AI_PROVIDER=mock`，不需要配置密钥即可体验完整流程。mock 会生成三张动态方向的演示海报，不调用外部研究或图片 API，也不会产生 API 费用。手机和电脑连接同一局域网后，用开发机局域网地址访问。
+
+本地要验证真实 AI 时，先把真实配置写入 `.env.local`，再运行一次完整 smoke。它会调用一次视觉模型和一次图片模型，检查视觉结果能否解析、图片结果是否为有效 PNG；会产生对应的第三方 API 费用，但不会输出密钥或上游原始响应：
+
+```bash
+pnpm ai:smoke
+pnpm dev
+```
+
+也可以给 smoke 指定一张本地图片：`AI_SMOKE_IMAGE=/绝对路径/玩偶.jpg pnpm ai:smoke`。视觉模型地址优先读取 `AI_VISION_BASE_URL`，图片模型地址优先读取 `AI_IMAGE_BASE_URL`；旧的 `AI_BASE_URL` 和 `AI_API_KEY` 仍作为回退，因此以后更换同协议的中转站通常只需改 `.env.local`，不需要改业务代码。
+
+本地或 Render Free 单 Web 不配置 `REDIS_URL` 和 R2 变量时，提交接口会立即返回任务编号，任务状态、原图和结果使用内存实现，并在同一个 Web 进程里异步消费；不会把图片写入容器磁盘。需要更稳定的完整生产模式时，再配置 Redis 和 R2，由独立 worker 消费任务并保存结果。
+
+生产构建和启动契约验证：
+
+```bash
+pnpm build
+node scripts/verify-production-start.mjs
+```
+
+`scripts/verify-production-start.mjs` 会在本机临时端口启动 `pnpm start`，轮询 `/api/health`，确认返回 HTTP 200 和 `{ "ok": true }`，随后优雅终止服务。该检查强制使用 `AI_PROVIDER=mock`，不会调用真实 AI 或产生 API 费用。
+
+## 首发部署到 Render Free 单 Web
+
+仓库根目录的 `render.yaml` 当前只声明一个 Render Free Web Service，使用 Docker 构建并直接启动 Next.js，不创建 Background Worker、Redis 或 R2。由于没有配置 `REDIS_URL` 和 R2，任务会在 Web 进程内存中处理；这适合小范围、低并发使用，但服务休眠或重启后未完成任务和临时结果会丢失。
+
+在 Render 创建 Blueprint 后，只为 Web Service 填写：`AI_PROVIDER`、`AI_VISION_PROTOCOL`、`AI_VISION_BASE_URL`、`AI_VISION_MODEL`、`AI_VISION_API_KEY`、`AI_IMAGE_BASE_URL`、`AI_IMAGE_MODEL`、`AI_IMAGE_API_KEY`、旧版 `AI_BASE_URL`/`AI_API_KEY`、可选的 `REFERENCE_RESEARCH_URL`/`REFERENCE_RESEARCH_API_KEY` 和 `APP_ACCESS_PASSWORD`。Blueprint 中没有真实值；API key 和访问密码只在 Render Variables 中填写，不要上传 `.env.local`。
+
+部署验收顺序为：Docker 构建 → Web `/api/health` → 用真实图片提交一次生成并下载结果。Free Web 会休眠，首次唤醒可能需要等待；如果需要多人并发、任务不丢失或作品持久保存，再升级到 Web + worker + Redis + R2 的完整付费架构。
+
+## Railway（暂不作为首发目标）
+
+项目仍保留 `railway.json` 作为历史配置，但本次部署不使用 Railway。当前发布源以 Render Free 单 Web 配置为准。
+
+推荐的生产变量：
+
+```text
+AI_PROVIDER=openai-compatible
+AI_VISION_PROTOCOL=google
+AI_VISION_BASE_URL=https://apinebula.ai
+AI_IMAGE_BASE_URL=https://apinebula.ai/v1
+AI_VISION_MODEL=gemini-3.1-flash-lite
+AI_IMAGE_MODEL=gpt-image-2
+AI_VISION_API_KEY=你的密钥
+AI_IMAGE_API_KEY=你的密钥
+REFERENCE_RESEARCH_URL=你的参考研究服务地址
+REFERENCE_RESEARCH_API_KEY=你的参考研究服务密钥
+REDIS_URL=你的 Redis 连接地址
+R2_ENDPOINT=你的 Cloudflare R2 S3 endpoint
+R2_ACCESS_KEY_ID=你的 R2 access key
+R2_SECRET_ACCESS_KEY=你的 R2 secret key
+R2_BUCKET=你的 R2 bucket
+# 不需要公开桶；结果默认由 /api/tasks/{taskId}?asset=... 私有代理返回
+R2_PUBLIC_BASE_URL=
+APP_ACCESS_PASSWORD=你设置的访问密码
+```
+
+API 密钥和访问密码只填写在 Render Variables，不要写入仓库，也不要使用 `NEXT_PUBLIC_` 前缀。
+
+## Docker 本地验证
+
+Dockerfile 使用 `node:22.14.0-bookworm-slim`，通过多阶段构建执行 frozen install、typecheck 和 production build，运行阶段使用 production dependencies 和非 root 用户监听 3000 端口。构建上下文会排除 `.env*`、`.worktrees`、`node_modules`、`.next`、测试结果和覆盖率目录，不会把本机密钥或宿主机依赖复制进镜像。
+
+Docker 可用时运行：
+
+```bash
+set -euo pipefail
+
+docker build -t knitting-doll-poster:local .
+container_id=""
+cleanup() {
+  if [[ -n "$container_id" ]]; then
+    docker stop "$container_id" >/dev/null 2>&1 || true
+    docker rm "$container_id" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT
+
+container_id=$(docker run -d --name knitting-doll-poster-local -p 127.0.0.1:3000:3000 \
+  -e AI_PROVIDER=mock \
+  -e REFERENCE_RESEARCH_URL= \
+  -e REFERENCE_RESEARCH_API_KEY= \
+  knitting-doll-poster:local)
+
+for attempt in $(seq 1 60); do
+  if response=$(curl --fail --silent --show-error http://127.0.0.1:3000/api/health) \
+    && printf '%s' "$response" | grep -q '"ok":true'; then
+    printf '%s\n' "$response"
+    exit 0
+  fi
+
+  if ! docker inspect --format '{{.State.Running}}' "$container_id" 2>/dev/null | grep -q '^true$'; then
+    echo '容器提前退出，日志：' >&2
+    docker logs "$container_id" >&2 || true
+    exit 1
+  fi
+  sleep 1
+done
+
+echo '健康检查超时，日志：' >&2
+docker logs "$container_id" >&2 || true
+exit 1
+```
+
+应看到 `{"ok":true}`。如果本机没有 Docker、Colima 或 Podman，不能声称容器构建或容器启动已验证；只能报告非容器的 `pnpm build` 和 production-start smoke test 结果。
+
+## AI 配置
+
+真实服务只在服务端读取以下变量。视觉/文字模型和图片模型可以共用一个第三方中转站，但要分别填写各自的地址、模型和 key：
+
+- `AI_PROVIDER=mock|openai-compatible`
+- `AI_VISION_PROTOCOL=google`：让 Gemini 使用 Google 原生协议；不使用 Google 原生协议时留空并使用兼容协议；
+- `AI_VISION_BASE_URL`：视觉/文字模型地址，例如 `https://apinebula.ai`；
+- `AI_VISION_API_KEY`：视觉/文字模型的服务端 API key；
+- `AI_VISION_MODEL`：图片理解和文字设计模型，例如 `gemini-3.1-flash-lite`；
+- `AI_IMAGE_BASE_URL`：图片生成模型地址，例如 `https://apinebula.ai/v1`；
+- `AI_IMAGE_API_KEY`：图片生成模型的服务端 API key；
+- `AI_IMAGE_MODEL`：图片生成/美化模型，例如 `gpt-image-2`；
+- `AI_BASE_URL`：旧版 OpenAI-compatible Provider 的兼容地址；
+- `AI_API_KEY`：兼容旧配置；如果两个模型共用一个 key，可以使用它作为回退配置。
+- `REFERENCE_RESEARCH_URL`：可选的参考研究服务地址。服务端会发送 `POST` JSON：`{ query, limit: 3, platform: "pinterest" }`，查询只来自截断后的关键词和创作想法；服务返回的来源最多保留 3 条。
+- `REFERENCE_RESEARCH_API_KEY`：可选的参考研究服务密钥，只放在服务端环境变量中，不会进入返回结果或浏览器。
+
+不要把任何 API key 写入客户端代码、提交到 Git 或发送给浏览器。接入真实第三方服务时，上传图片会发送到对应服务处理；两个模型可以使用同一个中转站，但 key 仍只在服务端配置。
+
+完整付费生产模式的异步任务启动方式是分别启动 Web 和 worker；Render Free 单 Web 不配置 Redis/R2 时只启动 Web：
+
+```bash
+pnpm build
+pnpm start   # Web：监听 3000，POST /api/generate 只返回 202
+pnpm worker  # Worker：使用 REDIS_URL 消费队列并把图片写入 R2
+```
+
+完整付费模式下，`REDIS_URL`、`R2_ENDPOINT`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY` 和 `R2_BUCKET` 应在 Web 与 worker 两侧配置。Render Free 单 Web 不配置这些变量，任务和图片只存在当前 Web 进程内存中。R2 桶建议配置按 `tasks/` 前缀的生命周期清理；任务状态本身也有过期时间。Web、worker 和 R2 适配器都只在内存中处理图片字节，不把原图或结果写入容器磁盘。两个模型可以共用一个第三方中转站，但视觉/文字模型和图片模型仍分别配置地址、模型和 key。
+
+参考研究服务是可选的。线上部署不能依赖本地 Pinterest 登录、浏览器状态或 Codex Skill；未配置 `REFERENCE_RESEARCH_URL`，或研究服务超时、返回 5xx、无效 JSON 时，网站会使用服务端内置的春天、自然、童话、复古、手作、居家和治愈设计规则作为 fallback，生成流程仍可继续。
+
+单个方向生成或质量检查异常时，会保留已生成的合格海报并显示安全提示；图片模型返回异常或临时网络错误时，服务端只做一次有限重试，不会无限重试。不满意时可在选择页点击“重新生成”，重新生成三张完整海报。
+
+## 数据边界
+
+首版不保存账号、作品、历史记录或公共作品库。浏览器只保存当前制作流程需要的状态；异步任务会在服务端临时保存原图和结果（本地内存或线上 R2），通过任务过期和 R2 生命周期清理，不作为用户历史。点击“重新生成”会清理浏览器中的旧生成结果，但保留上传图片、关键词和创作想法以便重试。
+
+## 检查
+
+```bash
+pnpm test
+pnpm exec tsc --noEmit
+node scripts/verify-production-start.mjs
+pnpm test:e2e
+```
+
+E2E 覆盖 iPhone 13 和 375×812 手机视口。
+
+E2E 会显式使用 `AI_PROVIDER=mock` 并清空参考研究地址，因此不会访问外部研究或图片 API，也不会产生 API 费用。

@@ -1,0 +1,43 @@
+// @vitest-environment node
+
+import { describe, expect, it, vi } from 'vitest';
+import type { ImageAsset } from '@/domain/project';
+import { InMemoryImageGenerationQueue } from './image-generation-queue';
+import { InMemoryTaskStore } from './task-store';
+import { submitGenerationTask } from './task-submission';
+import { InMemoryObjectStorage } from '@/server/storage/r2';
+
+const image: ImageAsset = {
+  id: 'upload',
+  dataUrl: 'data:image/png;base64,AAAA',
+  width: 600,
+  height: 800,
+  source: 'upload'
+};
+
+describe('submitGenerationTask', () => {
+  it('stores original bytes and returns a queued task without putting image data in the job', async () => {
+    const store = new InMemoryTaskStore();
+    const queue = new InMemoryImageGenerationQueue();
+    const storage = new InMemoryObjectStorage();
+    const scheduleWorker = vi.fn();
+
+    const result = await submitGenerationTask({
+      image,
+      keywords: '春日',
+      forbiddenWords: '价格',
+      creativeIdea: '温柔日常'
+    }, { store, queue, storage, env: { AI_PROVIDER: 'mock' }, scheduleWorker });
+
+    expect(result).toMatchObject({ status: 'queued' });
+    const task = await store.get(result.taskId);
+    expect(task).toMatchObject({ taskId: result.taskId, status: 'queued', originalKey: `tasks/${result.taskId}/original` });
+    expect(await storage.exists(task!.originalKey)).toBe(true);
+
+    const message = await queue.dequeue();
+    expect(message?.job).toMatchObject({ taskId: result.taskId, originalKey: task!.originalKey, config: { mode: 'mock' } });
+    expect(JSON.stringify(message?.job)).not.toContain('data:image');
+    expect(JSON.stringify(message?.job)).not.toContain('api-key');
+    expect(scheduleWorker).toHaveBeenCalledOnce();
+  });
+});

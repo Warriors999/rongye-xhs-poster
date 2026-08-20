@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: knitting-doll-poster-web
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerCommand: node node_modules/next/dist/bin/next start
+    healthCheckPath: /api/health
+    envVars:
+      - key: AI_PROVIDER
+        sync: false
+      - key: AI_VISION_PROTOCOL
+        sync: false
+      - key: AI_VISION_BASE_URL
+        sync: false
+      - key: AI_VISION_MODEL
+        sync: false
+      - key: AI_VISION_API_KEY
+        sync: false
+      - key: AI_IMAGE_BASE_URL
+        sync: false
+      - key: AI_IMAGE_MODEL
+        sync: false
+      - key: AI_IMAGE_API_KEY
+        sync: false
+      - key: AI_BASE_URL
+        sync: false
+      - key: AI_API_KEY
+        sync: false
+      - key: REFERENCE_RESEARCH_URL
+        sync: false
+      - key: REFERENCE_RESEARCH_API_KEY
+        sync: false
+      - key: APP_ACCESS_PASSWORD
+        sync: false

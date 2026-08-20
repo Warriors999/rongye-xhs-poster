@@ -1,0 +1,83 @@
+name: container-smoke
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  container-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build container
+        run: docker build --tag knitting-doll-poster:ci .
+
+      - name: Run health check
+        shell: bash
+        run: |
+          set -euo pipefail
+          container_id=""
+          cleanup() {
+            if [[ -n "$container_id" ]]; then
+              docker logs "$container_id" || true
+              docker stop "$container_id" >/dev/null 2>&1 || true
+              docker rm "$container_id" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup EXIT
+
+          container_id="$(docker run -d -p 127.0.0.1:18080:3000 \
+            -e AI_PROVIDER=mock \
+            -e REFERENCE_RESEARCH_URL= \
+            -e REFERENCE_RESEARCH_API_KEY= \
+            knitting-doll-poster:ci)"
+
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error --max-time 5 http://127.0.0.1:18080/api/health | grep -q '"ok":true'; then
+              exit 0
+            fi
+            if ! docker inspect --format '{{.State.Running}}' "$container_id" 2>/dev/null | grep -q '^true$'; then
+              docker logs "$container_id" || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          docker logs "$container_id" || true
+          exit 1
+
+      - name: Run worker entry smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          container_id=""
+          cleanup() {
+            if [[ -n "$container_id" ]]; then
+              docker logs "$container_id" || true
+              docker stop "$container_id" >/dev/null 2>&1 || true
+              docker rm "$container_id" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup EXIT
+
+          container_id="$(docker run -d \
+            -e AI_PROVIDER=mock \
+            -e REFERENCE_RESEARCH_URL= \
+            -e REFERENCE_RESEARCH_API_KEY= \
+            knitting-doll-poster:ci pnpm worker)"
+
+          for attempt in $(seq 1 10); do
+            if docker inspect --format '{{.State.Running}}' "$container_id" 2>/dev/null | grep -q '^true$'; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+
+          echo 'worker 容器提前退出，日志：' >&2
+          docker logs "$container_id" >&2 || true
+          exit 1
