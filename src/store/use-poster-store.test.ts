@@ -100,6 +100,30 @@ describe('poster store', () => {
     expect(usePosterStore.getState().step).toBe('choose');
   });
 
+  it('opens the optional copy screen without generating or clearing posters', () => {
+    usePosterStore.getState().startGeneration();
+    usePosterStore.getState().setGeneration(generation);
+    usePosterStore.getState().selectDraft(generation.posters[0]);
+    usePosterStore.getState().openCopyComposer();
+
+    expect(usePosterStore.getState().step).toBe('copy');
+    expect(usePosterStore.getState().selectedDraft?.style).toBe(generation.posters[0]?.style);
+    expect(usePosterStore.getState().generation?.posters).toHaveLength(1);
+    expect(usePosterStore.getState().copyResult).toBeNull();
+  });
+
+  it('returns from copy to choose and preserves the generated posters', () => {
+    usePosterStore.getState().startGeneration();
+    usePosterStore.getState().setGeneration(generation);
+    usePosterStore.getState().selectDraft(generation.posters[0]);
+    usePosterStore.getState().openCopyComposer();
+    usePosterStore.getState().backToChoose();
+
+    expect(usePosterStore.getState().step).toBe('choose');
+    expect(usePosterStore.getState().generation?.posters).toHaveLength(1);
+    expect(usePosterStore.getState().selectedDraft?.style).toBe(generation.posters[0]?.style);
+  });
+
   it('follows the wizard back transitions', () => {
     usePosterStore.getState().setCreativeIdea('保留我的想法');
     usePosterStore.getState().setKeywords('兔子');
