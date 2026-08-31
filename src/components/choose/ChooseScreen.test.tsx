@@ -99,6 +99,20 @@ describe('ChooseScreen', () => {
     expect(usePosterStore.getState().generation).toBeNull();
   });
 
+  it('opens the optional copy page only after a poster is selected', () => {
+    render(<ChooseScreen />);
+
+    const copyButton = screen.getByRole('button', { name: '生成小红书文案' });
+    expect(copyButton).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: '选择动态方案 B' }));
+    expect(copyButton).toBeEnabled();
+    fireEvent.click(copyButton);
+
+    expect(usePosterStore.getState().step).toBe('copy');
+    expect(usePosterStore.getState().selectedDraft?.style).toBe('story');
+  });
+
   it('returns to upload and clears generated research and warnings', () => {
     render(<ChooseScreen />);
 
