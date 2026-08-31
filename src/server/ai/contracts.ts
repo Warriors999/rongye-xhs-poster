@@ -35,6 +35,8 @@ const designNegative = z.string().trim().min(1).max(140);
 const nonEmptyTag = z.string().trim().min(1).max(MAX_TAG_LENGTH);
 const copyTitle = z.string().trim().min(1).max(36);
 const copyDescription = z.string().trim().min(1).max(60);
+const copyBody = z.string().trim().min(1).max(280);
+const copyAngle = z.string().trim().min(1).max(80);
 export const posterDirectionSchema = z.enum(['lifestyle', 'story', 'editorial']);
 export const legacyPosterStyleSchema = z.enum(['cute', 'daily', 'series']);
 export const posterStyleSchema = z.union([posterDirectionSchema, legacyPosterStyleSchema]);
@@ -88,6 +90,17 @@ export const copyDataSchema = z.object({
   title: copyTitle,
   description: copyDescription,
   tags: z.array(nonEmptyTag).min(1).max(2)
+});
+
+export const copyVariantSchema = z.object({
+  angle: copyAngle,
+  title: copyTitle,
+  body: copyBody,
+  tags: z.array(nonEmptyTag).min(1).max(5)
+});
+
+export const copyGenerationResponseSchema = z.object({
+  variants: z.array(copyVariantSchema).min(1).max(3)
 });
 
 const textLayerSchema = z.object({
@@ -167,6 +180,20 @@ export const beautifyRequestSchema = z.object({
   mode: z.enum(['original', 'craft', 'studio'])
 });
 
+export const copyGenerationRequestSchema = z.object({
+  originalImageDataUrl: imageDataUrlSchema,
+  originalWidth: boundedDimension,
+  originalHeight: boundedDimension,
+  posterImageDataUrl: imageDataUrlSchema,
+  posterWidth: boundedDimension,
+  posterHeight: boundedDimension,
+  selectedStyle: posterStyleSchema,
+  selectedPosterCopy: copyDataSchema,
+  keywords: z.string().max(500).default(''),
+  creativeIdea: z.string().max(500).default(''),
+  prompt: z.string().max(500).default('')
+});
+
 export const generationResultSchema = z.object({
   analysis: z.object({
     subject: nonEmptyText,
@@ -188,6 +215,7 @@ export const generateResponseSchema = generationResultSchema;
 
 export type GenerateRequest = z.infer<typeof generationRequestSchema>;
 export type BeautifyRequest = z.infer<typeof beautifyRequestSchema>;
+export type CopyGenerationRequest = z.infer<typeof copyGenerationRequestSchema>;
 export type GenerateResponse = GenerationResult;
 export type PosterDirection = z.infer<typeof posterDirectionSchema>;
 export type PosterStyle = DomainPosterDraft['style'];
