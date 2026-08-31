@@ -1,6 +1,6 @@
 import type { WizardStep } from '@/domain/project';
 
-const steps: WizardStep[] = ['upload', 'generating', 'choose'];
+const steps: WizardStep[] = ['upload', 'generating', 'choose', 'copy'];
 
 export function ProgressDots({ current }: { current: WizardStep }) {
   const index = steps.indexOf(current);
