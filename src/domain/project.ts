@@ -1,4 +1,4 @@
-export type WizardStep = 'upload' | 'generating' | 'choose' | 'edit' | 'exported';
+export type WizardStep = 'upload' | 'generating' | 'choose' | 'copy' | 'edit' | 'exported';
 export type BeautifyMode = 'original' | 'craft' | 'studio';
 export type PosterDirection = 'lifestyle' | 'story' | 'editorial';
 export type LegacyPosterStyle = 'cute' | 'daily' | 'series';
@@ -18,6 +18,17 @@ export interface CopyData {
   title: string;
   description: string;
   tags: string[];
+}
+
+export interface CopyVariant {
+  angle: string;
+  title: string;
+  body: string;
+  tags: string[];
+}
+
+export interface CopyGenerationResult {
+  variants: CopyVariant[];
 }
 
 export interface SubjectProtection {
