@@ -110,6 +110,7 @@ export function ChooseScreen() {
   const selectDraft = usePosterStore((state) => state.selectDraft);
   const setExportResult = usePosterStore((state) => state.setExportResult);
   const startGeneration = usePosterStore((state) => state.startGeneration);
+  const openCopyComposer = usePosterStore((state) => state.openCopyComposer);
   const goBack = usePosterStore((state) => state.goBack);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [savedKeys, setSavedKeys] = useState<string[]>([]);
@@ -197,8 +198,11 @@ export function ChooseScreen() {
         {posterCount > 0 && <button className="secondary-button save-all-button" type="button" onClick={saveAll} disabled={Boolean(savingKey)}>
           {savingKey === 'all' ? `正在准备 ${posterCount} 张图片…` : allSaved ? `已保存全部 ${posterCount} 张` : `全部保存 ${posterCount} 张`}
         </button>}
+        {posterCount > 0 && <button className="primary-button copy-entry-button" type="button" aria-label="生成小红书文案" onClick={openCopyComposer} disabled={!selectedDraft || Boolean(savingKey)}>
+          {selectedDraft ? '生成小红书文案' : '先选择一张海报，再生成文案'}
+        </button>}
         <button className="text-button regenerate-button" type="button" onClick={startGeneration}>不喜欢？重新生成</button>
-        <p className="privacy-note">文字和排版已经由 AI 直接生成在图片里；不需要再进入编辑页。</p>
+        <p className="privacy-note">海报保存不受文案功能影响；只有点击下一步并再次确认生成时，才会调用文案模型。</p>
       </section>
     </main>
   );
