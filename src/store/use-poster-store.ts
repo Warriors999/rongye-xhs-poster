@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ImageAsset, GenerationResult, PosterDraft, WizardStep } from '@/domain/project';
+import type { CopyGenerationResult, ImageAsset, GenerationResult, PosterDraft, WizardStep } from '@/domain/project';
 
 export function cloneDraft(draft: PosterDraft): PosterDraft {
   return {
@@ -32,6 +32,12 @@ function cloneResearch(research: GenerationResult['research']): GenerationResult
   };
 }
 
+function cloneCopyResult(result: CopyGenerationResult): CopyGenerationResult {
+  return {
+    variants: result.variants.map((variant) => ({ ...variant, tags: [...variant.tags] }))
+  };
+}
+
 export function cloneGeneration(generation: GenerationResult): GenerationResult {
   return {
     analysis: {
@@ -53,15 +59,24 @@ export interface PosterStore {
   forbiddenWords: string;
   generation: GenerationResult | null;
   selectedDraft: PosterDraft | null;
+  copyPrompt: string;
+  copyResult: CopyGenerationResult | null;
+  copyError: string | null;
   exportResult: { dataUrl: string; filename: string } | null;
   error: string | null;
   setUpload: (upload: ImageAsset | null) => void;
   setCreativeIdea: (creativeIdea: string) => void;
   setKeywords: (keywords: string) => void;
   setForbiddenWords: (forbiddenWords: string) => void;
+  setCopyPrompt: (copyPrompt: string) => void;
   startGeneration: () => void;
+  openCopyComposer: () => void;
+  backToChoose: () => void;
   markExported: () => void;
   setExportResult: (result: { dataUrl: string; filename: string }) => void;
+  setCopyResult: (result: CopyGenerationResult) => void;
+  setCopyError: (message: string) => void;
+  clearCopyError: () => void;
   continueEditing: () => void;
   failGeneration: (message: string) => void;
   setGeneration: (generation: GenerationResult) => void;
@@ -82,6 +97,9 @@ const initialState = {
   forbiddenWords: '',
   generation: null,
   selectedDraft: null,
+  copyPrompt: '',
+  copyResult: null,
+  copyError: null,
   exportResult: null,
   error: null
 };
@@ -92,6 +110,7 @@ export const usePosterStore = create<PosterStore>((set) => ({
   setCreativeIdea: (creativeIdea) => set({ creativeIdea }),
   setKeywords: (keywords) => set({ keywords }),
   setForbiddenWords: (forbiddenWords) => set({ forbiddenWords }),
+  setCopyPrompt: (copyPrompt) => set({ copyPrompt }),
   startGeneration: () =>
     set((state) => {
       if ((state.step !== 'upload' && state.step !== 'choose') || !state.upload) return state;
@@ -99,18 +118,32 @@ export const usePosterStore = create<PosterStore>((set) => ({
         step: 'generating',
         error: null,
         selectedDraft: null,
+        copyResult: null,
+        copyError: null,
         exportResult: null,
         ...(state.step === 'choose' ? { generation: null } : {})
       };
     }),
+  openCopyComposer: () =>
+    set((state) =>
+      state.step === 'choose' && state.upload && state.selectedDraft
+        ? { step: 'copy', copyResult: null, copyError: null }
+        : state
+    ),
+  backToChoose: () =>
+    set((state) => (state.step === 'copy' ? { step: 'choose', copyResult: null, copyError: null } : state)),
   markExported: () =>
     set((state) => (state.step === 'choose' || state.step === 'edit' ? { step: 'exported' } : state)),
   setExportResult: (exportResult) => set({ exportResult }),
+  setCopyResult: (copyResult) =>
+    set((state) => (state.step === 'copy' ? { copyResult: cloneCopyResult(copyResult), copyError: null } : state)),
+  setCopyError: (copyError) => set((state) => (state.step === 'copy' ? { copyError } : state)),
+  clearCopyError: () => set({ copyError: null }),
   continueEditing: () => set((state) => (state.step === 'exported' ? { step: 'edit' } : state)),
   failGeneration: (message) =>
     set((state) =>
       state.step === 'generating'
-        ? { step: 'upload', error: message, generation: null, selectedDraft: null, exportResult: null }
+        ? { step: 'upload', error: message, generation: null, selectedDraft: null, copyResult: null, copyError: null, exportResult: null }
         : state
     ),
   setGeneration: (generation) =>
@@ -134,14 +167,15 @@ export const usePosterStore = create<PosterStore>((set) => ({
   goBack: () =>
     set((state) => {
       if (state.step === 'generating') {
-        return { step: 'upload', generation: null, selectedDraft: null, exportResult: null };
+        return { step: 'upload', generation: null, selectedDraft: null, copyResult: null, copyError: null, exportResult: null };
       }
+      if (state.step === 'copy') return { step: 'choose', copyResult: null, copyError: null };
       if (state.step === 'edit') return { step: 'choose' };
       if (state.step === 'choose') {
-        return { step: 'upload', generation: null, selectedDraft: null, exportResult: null, error: null };
+        return { step: 'upload', generation: null, selectedDraft: null, copyResult: null, copyError: null, exportResult: null, error: null };
       }
       if (state.step === 'exported') {
-        return { step: 'upload', generation: null, selectedDraft: null, exportResult: null, error: null };
+        return { step: 'upload', generation: null, selectedDraft: null, copyResult: null, copyError: null, exportResult: null, error: null };
       }
       return state;
     }),
@@ -154,8 +188,11 @@ export const usePosterStore = create<PosterStore>((set) => ({
       creativeIdea: state.creativeIdea,
       keywords: state.keywords,
       forbiddenWords: state.forbiddenWords,
+      copyPrompt: state.copyPrompt,
       generation: null,
       selectedDraft: null,
+      copyResult: null,
+      copyError: null,
       exportResult: null,
       error: null
     })),
