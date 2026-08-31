@@ -251,6 +251,28 @@ h1 { position: relative; z-index: 1; margin: 0; font-size: clamp(29px, 8vw, 40px
 .choose-warnings { display: grid; gap: 6px; margin: 0 2px 12px; padding: 10px 12px; color: #8b5b3d; background: #fff8e8; border: 1px solid #f0ddbb; border-radius: 10px; font-size: 12px; line-height: 1.55; }
 .choose-warnings p { margin: 0; }
 .save-error { margin: 12px 2px; padding: 10px 12px; color: var(--danger); background: #fff0ed; border-radius: 10px; font-size: 13px; line-height: 1.5; }
+.copy-entry-button { margin-top: 10px; }
+
+.copy-shell { align-items: start; padding-top: calc(18px + env(safe-area-inset-top)); }
+.copy-card { width: min(100%, 420px); padding: 24px 18px 22px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-card); box-shadow: 0 18px 60px rgb(125 87 75 / 8%); }
+.copy-heading { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.copy-heading > div:first-child { min-width: 0; }
+.copy-heading .kicker { margin-top: 0; }
+.copy-thumbnails { display: flex; flex: 0 0 auto; gap: 5px; }
+.copy-thumbnails img { width: 40px; height: 54px; object-fit: cover; border: 1px solid var(--line); border-radius: 9px; }
+.copy-intro { margin: 10px 2px 18px; color: var(--muted); font-size: 14px; line-height: 1.65; }
+.field-label { display: block; margin: 0 2px 7px; color: var(--ink); font-size: 13px; font-weight: 700; }
+.copy-prompt-input { display: block; width: 100%; min-height: 104px; padding: 11px 12px; resize: vertical; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 11px; font: inherit; font-size: 13px; line-height: 1.6; outline: none; }
+.copy-prompt-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgb(216 117 104 / 12%); }
+.copy-generate-button { margin-top: 12px; }
+.copy-results { display: grid; gap: 12px; margin-top: 16px; }
+.copy-option { padding: 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 13px; }
+.copy-option-topline { display: flex; justify-content: space-between; gap: 10px; color: var(--accent-ink); font-size: 11px; font-weight: 700; }
+.copy-option h2 { margin: 9px 0 0; color: var(--ink); font-size: 19px; line-height: 1.35; }
+.copy-option p { margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
+.copy-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.copy-tags span { padding: 4px 8px; color: var(--accent-ink); background: #fff0ed; border-radius: 999px; font-size: 11px; }
+.copy-copy-button { min-height: 38px; margin-top: 12px; padding-block: 8px; font-size: 12px; }
 
 .poster-preview { position: relative; container-type: inline-size; width: 100%; aspect-ratio: 3 / 4; min-width: 0; overflow: hidden; border-radius: 12px; isolation: isolate; background: #f4e7db; }
 .poster-preview-image { position: absolute; inset: 0; z-index: 1; display: block; width: 100%; height: 100%; object-fit: contain; object-position: center; }
