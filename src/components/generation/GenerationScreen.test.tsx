@@ -70,7 +70,34 @@ describe('GenerationScreen', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(6);
     expect(screen.getByText('正在形成 3 个设计方向')).toBeInTheDocument();
     expect(screen.getByText('正在生成 3 张微海报')).toBeInTheDocument();
+    expect(screen.getByText('正在整理图片与下载')).toBeInTheDocument();
     expect(screen.queryByText(/\d+%/)).not.toBeInTheDocument();
+  });
+
+  it('submits a single redo with its original photo, reference, selected design and feedback', async () => {
+    usePosterStore.getState().setGeneration(createGeneration());
+    const before = usePosterStore.getState().generation!;
+    usePosterStore.getState().setReferenceImage({ ...upload, id: 'reference', dataUrl: 'data:image/png;base64,ref' });
+    usePosterStore.getState().regenerateOne(before.posters[1], '背景更简单，保留文字');
+    const result = taskResultFromGeneration({ ...createGeneration(), posters: [{ ...before.posters[1], image: { ...upload, id: 'new-story' } }] });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-redo-1', status: 'queued' }), { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-redo-1', status: 'succeeded', phase: 'completed', progress: 100, warnings: [], expiresAt: Date.now() + 60_000, result }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    render(<GenerationScreen />);
+    expect(screen.getByText('正在重做这张海报')).toBeInTheDocument();
+    expect(screen.queryByText('正在生成 3 张微海报')).not.toBeInTheDocument();
+    await waitFor(() => expect(usePosterStore.getState().step).toBe('choose'));
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/regenerate');
+    const form = fetchMock.mock.calls[0][1].body as FormData;
+    expect(form.get('originalImageDataUrl')).toBe(upload.dataUrl);
+    expect(form.get('referenceImageDataUrl')).toBe('data:image/png;base64,ref');
+    expect(form.get('targetStyle')).toBe('story');
+    expect(form.get('revisionPrompt')).toBe('背景更简单，保留文字');
+    expect(JSON.parse(form.get('selectedPosterDesign') as string)).toEqual(before.posters[1].design);
+    expect(JSON.parse(form.get('selectedPosterCopy') as string)).toEqual(before.posters[1].copy);
+    expect(usePosterStore.getState().generation?.posters).toHaveLength(3);
+    expect(usePosterStore.getState().generation?.posters[0]).toBe(before.posters[0]);
   });
 
   it('submits a 202 task, polls every two seconds, and enters choose after success', async () => {

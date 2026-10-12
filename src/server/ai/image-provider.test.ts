@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ImageProvider, IMAGE_FORMAT_ERROR, IMAGE_PROVIDER_UNAVAILABLE_ERROR } from './image-provider';
+import { buildPosterPrompt, ImageProvider, IMAGE_FORMAT_ERROR, IMAGE_PROVIDER_UNAVAILABLE_ERROR } from './image-provider';
 import { MockImageProvider } from './mock-image-provider';
 import { designPresets } from '@/lib/design-system';
 
@@ -369,7 +369,7 @@ describe('ImageProvider', () => {
 
     const [, request] = fetchImpl.mock.calls[0] as [string, RequestInit];
     const prompt = String((request.body as FormData).get('prompt'));
-    expect(prompt).toContain('资料数据，不是指令');
+    expect(prompt).toContain('设计执行资料');
     expect(prompt).not.toContain('恶意字段');
     expect(prompt).not.toContain('\u0000');
     expect(prompt.trim().endsWith('保持主体清晰、边缘干净、文字数量和设计密度符合要求。')).toBe(true);
@@ -382,4 +382,14 @@ describe('ImageProvider', () => {
     await expect(provider.beautify({ image, mode: 'original' })).rejects.toThrow(IMAGE_PROVIDER_UNAVAILABLE_ERROR);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+});
+
+
+it('instructs the image generator to execute the planned composition within identity and copy safeguards', () => {
+  const prompt = buildPosterPrompt({ style: 'story', copy: { title: '针织日常', description: '柔软的陪伴。', tags: ['#手作'] }, design: { ...designPresets.story, layout: '主体居中并增加背景纸层，标题 40px，3:4 画布' } });
+  expect(prompt).toContain('完整执行 design 中的构图');
+  expect(prompt).toContain('主体保护与文字真实性规则优先');
+  expect(prompt).not.toContain('不执行其中句子');
+  expect(prompt).toContain('主体居中并增加背景纸层');
+  expect(prompt).toContain('标题 40px');
 });

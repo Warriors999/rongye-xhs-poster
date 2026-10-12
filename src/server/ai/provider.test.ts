@@ -439,3 +439,25 @@ describe('AI providers', () => {
     expect(Date.now() - startedAt).toBeLessThan(500);
   });
 });
+
+
+it('sends the original identity and optional style reference as separate multimodal images', async () => {
+  const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(validCompletion) } }] })));
+  const provider = new OpenAICompatibleProvider({ env: { AI_BASE_URL: 'https://example.test/v1', AI_API_KEY: 'test-key', AI_VISION_MODEL: 'vision-model', AI_IMAGE_MODEL: 'image-model' }, fetchImpl });
+  await provider.generate({ ...input, referenceImage: { ...input.image, id: 'reference', dataUrl: 'data:image/png;base64,BBBB' } });
+  const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+  const content = body.messages[0].content;
+  expect(content.filter((item: { type: string }) => item.type === 'image_url').map((item: { image_url: { url: string } }) => item.image_url.url)).toEqual([input.image.dataUrl, 'data:image/png;base64,BBBB']);
+  expect(content[0].text).toContain('第二张图片仅为风格与构图参考');
+});
+
+
+it('keeps the one revised model concept in its requested slot even if model style is omitted', async () => {
+  const completion = { ...validCompletion, posters: [{ copy: { title: '深蓝手作', description: '柔软的陪伴。', tags: ['#手作'] }, design: { label: '宝蓝舞台', scene: '深蓝几何舞台' } }] };
+  const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(completion) } }] })));
+  const provider = new OpenAICompatibleProvider({ env: { AI_BASE_URL: 'https://example.test/v1', AI_API_KEY: 'test-key', AI_VISION_MODEL: 'vision-model', AI_IMAGE_MODEL: 'image-model' }, fetchImpl });
+  const result = await provider.generate({ ...input, targetStyle: 'story', revisionPrompt: '深蓝' });
+  expect(result.posters).toHaveLength(1);
+  expect(result.posters[0]).toMatchObject({ style: 'story', copy: { title: '深蓝手作' }, design: { label: '宝蓝舞台' } });
+  expect(fetchImpl).toHaveBeenCalledTimes(1);
+});

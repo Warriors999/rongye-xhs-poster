@@ -189,3 +189,26 @@ describe('image generation worker', () => {
     expect(await queue.dequeue()).toBeNull();
   });
 });
+
+
+it('loads the reference bytes and persists operation callbacks plus final prompt', async () => {
+  const store = new InMemoryTaskStore();
+  const storage = new InMemoryObjectStorage();
+  const queue = new InMemoryImageGenerationQueue();
+  const task = await store.create({ keywords: '', forbiddenWords: '', creativeIdea: '', originalWidth: 600, originalHeight: 800 });
+  const value = { ...job(task.taskId), referenceKey: `tasks/${task.taskId}/reference`, referenceWidth: 500, referenceHeight: 700, targetStyle: 'story' as const, revisionPrompt: '深蓝背景' };
+  await storage.put(value.originalKey, new Uint8Array([0, 0, 0]), 'image/png');
+  await storage.put(value.referenceKey, new Uint8Array([1, 1, 1]), 'image/png');
+  await processTask(value, { store, queue, storage, generate: async (input, options) => {
+    expect(input.referenceImage).toMatchObject({ width: 500, height: 700, dataUrl: 'data:image/png;base64,AQEB' });
+    expect(input.targetStyle).toBe('story');
+    for (const phase of ['researching', 'designing', 'generating', 'checking'] as const) {
+      await options!.onPhase!(phase);
+      expect((await store.get(task.taskId))!.phase).toBe(phase);
+    }
+    const result = generatedResult();
+    result.posters[0].finalPrompt = '实际生成提示词';
+    return result;
+  } });
+  expect((await store.get(task.taskId))?.result?.posters[0].finalPrompt).toBe('实际生成提示词');
+});

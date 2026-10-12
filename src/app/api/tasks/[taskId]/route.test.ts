@@ -55,3 +55,16 @@ describe('GET /api/tasks/[taskId]', () => {
     expect(unrelated.status).toBe(404);
   });
 });
+
+
+it('projects only safe poster fields while preserving a bounded final image prompt', async () => {
+  resetAsyncRuntimeForTests();
+  const runtime = getAsyncRuntime({});
+  const task = await runtime.store.create({ taskId: 'task-prompt-1', keywords: '', forbiddenWords: '', creativeIdea: '' });
+  const draft = { ...createEmptyDraft(), finalPrompt: '实际中文生成提示词', untrustedMetadata: 'should-not-be-public' };
+  await runtime.store.update(task.taskId, { status: 'succeeded', result: { analysis: { subject: '针织玩偶', colors: [], material: '针织', details: [] }, research: defaultResearchSummary, posters: [{ ...draft, image: { assetKey: `tasks/${task.taskId}/assets/lifestyle`, contentType: 'image/png', width: 600, height: 800 } }] } });
+  const response = await GET(new Request(`http://localhost/api/tasks/${task.taskId}`), { params: Promise.resolve({ taskId: task.taskId }) });
+  const body = await response.json();
+  expect(body.result.posters[0].finalPrompt).toBe('实际中文生成提示词');
+  expect(body.result.posters[0]).not.toHaveProperty('untrustedMetadata');
+});

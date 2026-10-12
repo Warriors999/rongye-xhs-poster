@@ -349,3 +349,11 @@ describe('reference research provider factory', () => {
     await expect(researcher.research({ keywords: '手作' })).resolves.toMatchObject({ fallback: true });
   });
 });
+
+
+it('keeps neutral research open to saturated, contrast-rich creative directions', async () => {
+  const summary = await new ReferenceResearcher({ env: {} }).research({ keywords: '' });
+  expect(summary.palette).toContain('高饱和');
+  expect(summary.density).toContain('疏密');
+  expect(summary.palette).not.toContain('避免高反差');
+});

@@ -49,7 +49,7 @@ async function decode(file: File): Promise<DecodedImage> {
   }
 }
 
-export async function normalizeImage(file: File): Promise<ImageAsset> {
+export async function normalizeImage(file: File, options: { maxEdge?: number; quality?: number } = {}): Promise<ImageAsset> {
   if (file.size > MAX_FILE_SIZE) throw new Error('图片不能超过 12MB');
   if (!SUPPORTED_TYPES.has(file.type)) throw new Error('请选择 JPG、PNG 或 WebP 图片');
 
@@ -61,7 +61,7 @@ export async function normalizeImage(file: File): Promise<ImageAsset> {
   }
 
   try {
-    const scale = Math.min(1, MAX_EDGE / Math.max(decoded.width, decoded.height));
+    const scale = Math.min(1, (options.maxEdge ?? MAX_EDGE) / Math.max(decoded.width, decoded.height));
     const width = Math.max(1, Math.round(decoded.width * scale));
     const height = Math.max(1, Math.round(decoded.height * scale));
     const canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
@@ -72,7 +72,7 @@ export async function normalizeImage(file: File): Promise<ImageAsset> {
     canvas.width = width;
     canvas.height = height;
     decoded.draw(context, width, height);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    const dataUrl = canvas.toDataURL('image/jpeg', options.quality ?? 0.92);
 
     return { id: createId('upload'), dataUrl, width, height, source: 'upload' };
   } catch {

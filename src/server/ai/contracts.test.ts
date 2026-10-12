@@ -259,3 +259,13 @@ describe('AI contracts', () => {
     expect(generateResponseSchema.safeParse({ ...valid, posters: [{ ...draft, layers: { stickers: { 'sticker-1': { ...sticker, y: 1025 } } } }, valid.posters[1], valid.posters[2]] }).success).toBe(false);
   });
 });
+
+
+it('accepts a complete optional reference and revision but rejects incomplete dimensions', () => {
+  const base = { imageDataUrl: 'data:image/png;base64,AAAA', width: 600, height: 800 };
+  expect(generationRequestSchema.safeParse({ ...base, referenceImageDataUrl: 'data:image/png;base64,BBBB', referenceWidth: 500, referenceHeight: 700, targetStyle: 'story', revisionPrompt: '深蓝背景' }).success).toBe(true);
+  expect(generationRequestSchema.safeParse({ ...base, referenceImageDataUrl: 'data:image/png;base64,BBBB' }).success).toBe(false);
+  expect(generationRequestSchema.safeParse({ ...base, referenceWidth: 500, referenceHeight: 700 }).success).toBe(false);
+  const result = generationRequestSchema.parse({ ...base, targetStyle: 'story', revisionPrompt: '深蓝背景' });
+  expect(result.targetStyle).toBe('story');
+});

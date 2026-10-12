@@ -2,7 +2,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { createEmptyDraft, type ImageAsset, type ResearchSummary } from '@/domain/project';
-import { IMAGE_FORMAT_ERROR } from '@/server/ai/image-provider';
+import { buildPosterPrompt, IMAGE_FORMAT_ERROR } from '@/server/ai/image-provider';
 import type { ImageBeautifier } from '@/server/ai/image-provider';
 import type { Provider } from '@/server/ai/provider';
 import type { QualityChecker } from '@/server/ai/quality-provider';
@@ -460,4 +460,57 @@ describe('generatePosters use case', () => {
     expect(imageCalls).toBe(0);
     expect(qualityCalls).toBe(0);
   });
+});
+
+
+describe('single poster revision and real phases', () => {
+  it('renders only the requested slot and records the actual sanitized image prompt', async () => {
+    const beautify = vi.fn().mockImplementation(async ({ image }) => ({ ...image, dataUrl: 'data:image/png;base64,AAAA', source: 'beautified' }));
+    const phases: string[] = [];
+    const result = await generatePosters({ ...input(), targetStyle: 'story', revisionPrompt: '背景改成深蓝', referenceImage: uploadImage }, {
+      dependencies: dependencies({ getImageProvider: () => ({ beautify }) }),
+      onPhase: async (phase) => { phases.push(phase); }
+    });
+    expect(beautify).toHaveBeenCalledTimes(1);
+    expect(result.posters.map((poster) => poster.style)).toEqual(['story']);
+    const actual = beautify.mock.calls[0][0].poster;
+    expect(result.posters[0].finalPrompt).toBe(buildPosterPrompt(actual));
+    expect(phases).toEqual(['researching', 'designing', 'generating', 'checking']);
+  });
+
+  it('emits each phase at the operation boundary instead of before generation starts', async () => {
+    const events: string[] = [];
+    await generatePosters(input(), {
+      onPhase: async (phase) => { events.push(phase); },
+      dependencies: dependencies({
+        getReferenceResearcher: () => ({ research: async () => { events.push('research-operation'); return research; } }),
+        getProvider: () => ({ generate: async () => { events.push('design-operation'); return generatedResult(); } }),
+        getImageProvider: () => successfulImageProvider(() => events.push('image-operation'))
+      })
+    });
+    expect(events.indexOf('researching')).toBeLessThan(events.indexOf('research-operation'));
+    expect(events.indexOf('designing')).toBeLessThan(events.indexOf('design-operation'));
+    expect(events.indexOf('generating')).toBeLessThan(events.indexOf('image-operation'));
+    expect(events.indexOf('checking')).toBeGreaterThan(events.lastIndexOf('image-operation'));
+  });
+});
+
+
+it('retains numerical layout and background changes in the actual image prompt', async () => {
+  const source = generatedResult();
+  source.posters[0].design = { ...source.posters[0].design!, layout: '3:4 画布，主体占画面 60%，标题位于左上角', scene: '背景改成深蓝，增加 3 个几何色块', typography: '2 级字号，标题 40px，左上角对齐' };
+  const beautify = vi.fn().mockImplementation(async ({ image }) => image);
+  const result = await generatePosters(input(), { dependencies: dependencies({ getProvider: () => ({ generate: async () => source }), getImageProvider: () => ({ beautify }) }) });
+  expect(result.posters[0].finalPrompt).toContain('主体占画面 60%');
+  expect(result.posters[0].finalPrompt).toContain('背景改成深蓝');
+  expect(result.posters[0].finalPrompt).toContain('标题 40px');
+});
+
+
+it('uses the selected copy for a visual revision and keeps it safe before the image call', async () => {
+  const copy = { title: '柔软日常', description: '一针一线的陪伴。', tags: ['#手作'] };
+  const beautify = vi.fn().mockImplementation(async ({ image }) => image);
+  const result = await generatePosters({ ...input(), targetStyle: 'story', selectedPosterCopy: copy }, { dependencies: dependencies({ getImageProvider: () => ({ beautify }) }) });
+  expect(result.posters[0].copy).toEqual(copy);
+  expect(beautify.mock.calls[0][0].poster.copy).toEqual(copy);
 });

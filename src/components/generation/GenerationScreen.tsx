@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { GenerationResult, ImageAsset } from '@/domain/project';
+import type { GenerationResult, ImageAsset, PosterDraft } from '@/domain/project';
 import { StatusBanner } from '@/components/common/StatusBanner';
 import { taskStatusResponseSchema } from '@/server/async/task-response';
 import { usePosterStore } from '@/store/use-poster-store';
@@ -12,7 +12,7 @@ const phases = [
   '正在研究视觉参考',
   '正在形成 3 个设计方向',
   '正在生成 3 张微海报',
-  '正在检查清晰度和主体一致性'
+  '正在整理图片与下载'
 ] as const;
 const phaseIndexes: Record<string, number> = {
   queued: 0,
@@ -90,13 +90,24 @@ async function readTaskStatus(response: Response) {
   return parsed.data;
 }
 
-function appendGenerationInput(form: FormData, upload: ImageAsset, keywords: string, forbiddenWords: string, creativeIdea: string) {
-  form.append('imageDataUrl', upload.dataUrl);
+function appendGenerationInput(form: FormData, upload: ImageAsset, keywords: string, forbiddenWords: string, creativeIdea: string, referenceImage: ImageAsset | null, target: PosterDraft | null, revisionPrompt: string) {
+  form.append(target ? 'originalImageDataUrl' : 'imageDataUrl', upload.dataUrl);
   form.append('width', String(upload.width));
   form.append('height', String(upload.height));
   form.append('keywords', keywords);
   form.append('forbiddenWords', forbiddenWords);
   form.append('creativeIdea', creativeIdea);
+  if (referenceImage) {
+    form.append('referenceImageDataUrl', referenceImage.dataUrl);
+    form.append('referenceWidth', String(referenceImage.width));
+    form.append('referenceHeight', String(referenceImage.height));
+  }
+  if (target) {
+    form.append('targetStyle', target.style);
+    form.append('revisionPrompt', revisionPrompt);
+    form.append('selectedPosterDesign', JSON.stringify(target.design));
+    form.append('selectedPosterCopy', JSON.stringify(target.copy));
+  }
 }
 
 function userFacingGenerationError(error: unknown): string {
@@ -113,15 +124,19 @@ export function GenerationScreen() {
   const keywords = usePosterStore((state) => state.keywords);
   const forbiddenWords = usePosterStore((state) => state.forbiddenWords);
   const creativeIdea = usePosterStore((state) => state.creativeIdea);
+  const referenceImage = usePosterStore((state) => state.referenceImage);
+  const regenerationTarget = usePosterStore((state) => state.regenerationTarget);
+  const revisionPrompt = usePosterStore((state) => state.revisionPrompt);
   const error = usePosterStore((state) => state.error);
   const setGeneration = usePosterStore((state) => state.setGeneration);
   const failGeneration = usePosterStore((state) => state.failGeneration);
   const startGeneration = usePosterStore((state) => state.startGeneration);
   const goBack = usePosterStore((state) => state.goBack);
   const [phaseIndex, setPhaseIndex] = useState(0);
-  const inputRef = useRef<{ upload: ImageAsset; keywords: string; forbiddenWords: string; creativeIdea: string } | null>(null);
+  const shownPhases = regenerationTarget ? phases.map((phase, index) => index === 3 ? '正在调整这一张的设计' : index === 4 ? '正在重做这张海报' : phase) : phases;
+  const inputRef = useRef<{ upload: ImageAsset; keywords: string; forbiddenWords: string; creativeIdea: string; referenceImage: ImageAsset | null; target: PosterDraft | null; revisionPrompt: string } | null>(null);
 
-  inputRef.current = upload ? { upload, keywords, forbiddenWords, creativeIdea } : null;
+  inputRef.current = upload ? { upload, keywords, forbiddenWords, creativeIdea, referenceImage, target: regenerationTarget, revisionPrompt } : null;
 
   useEffect(() => {
     if (step !== 'generating') return;
@@ -134,7 +149,7 @@ export function GenerationScreen() {
 
     if (input) {
       const form = new FormData();
-      appendGenerationInput(form, input.upload, input.keywords, input.forbiddenWords, input.creativeIdea);
+      appendGenerationInput(form, input.upload, input.keywords, input.forbiddenWords, input.creativeIdea, input.referenceImage, input.target, input.revisionPrompt);
 
       const pollTask = async (taskId: string): Promise<void> => {
         if (!active || controller.signal.aborted) return;
@@ -153,7 +168,7 @@ export function GenerationScreen() {
         }, 2_000);
       };
 
-      void fetch('/api/generate', {
+      void fetch(input.target ? '/api/regenerate' : '/api/generate', {
         method: 'POST',
         body: form,
         signal: controller.signal
@@ -203,14 +218,14 @@ export function GenerationScreen() {
   return (
     <main className="app-shell generation-shell">
       <section className="generation-card" aria-labelledby="generation-title">
-        <p className="kicker">AI 正在准备你的海报</p>
+        <p className="kicker">{regenerationTarget ? '正在调整这一张' : 'AI 正在准备你的海报'}</p>
         <div className="generation-upload-wrap">
           <img className="generation-upload-preview" src={upload.dataUrl} alt="已上传的玩偶照片" />
         </div>
-        <h1 id="generation-title" aria-live="polite">{phases[phaseIndex]}</h1>
-        <p className="generation-intro">会保留真实玩偶，再完成场景、设计元素、文字和排版。</p>
+        <h1 id="generation-title" aria-live="polite">{shownPhases[phaseIndex]}</h1>
+        <p className="generation-intro">{regenerationTarget ? '按你的建议调整，其他海报已经保留。' : '根据原图、想法与参考，完成场景、文字和排版。'}</p>
         <ol className="generation-phases" aria-label="生成阶段">
-          {phases.map((phase, index) => (
+          {shownPhases.map((phase, index) => (
             <li key={phase} className={index === phaseIndex ? 'generation-phase active' : index < phaseIndex ? 'generation-phase complete' : 'generation-phase'}>
               <span className="generation-phase-marker" aria-hidden="true">{index < phaseIndex ? '✓' : index + 1}</span>
               <span>{phase}</span>

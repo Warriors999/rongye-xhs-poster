@@ -13,6 +13,13 @@ export interface GenerationJob {
   keywords: string;
   forbiddenWords: string;
   creativeIdea: string;
+  referenceKey?: string;
+  referenceWidth?: number;
+  referenceHeight?: number;
+  targetStyle?: PosterStyle;
+  revisionPrompt?: string;
+  selectedPosterDesign?: DesignBrief;
+  selectedPosterCopy?: PosterDraft['copy'];
   config: SafeGenerationConfig;
 }
 
@@ -102,6 +109,10 @@ export function isTaskId(value: string): boolean {
 
 export function assetKeyFor(taskId: string, style: PosterStyle): string {
   return `tasks/${taskId}/assets/${style}`;
+}
+
+export function referenceKeyFor(taskId: string): string {
+  return `tasks/${taskId}/reference`;
 }
 
 export function originalKeyFor(taskId: string): string {

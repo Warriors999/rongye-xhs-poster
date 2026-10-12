@@ -41,3 +41,15 @@ describe('submitGenerationTask', () => {
     expect(scheduleWorker).toHaveBeenCalledOnce();
   });
 });
+
+
+it('stores the optional style reference outside the queue and retains revision inputs', async () => {
+  const store = new InMemoryTaskStore();
+  const queue = new InMemoryImageGenerationQueue();
+  const storage = new InMemoryObjectStorage();
+  const result = await submitGenerationTask({ image, referenceImage: { ...image, id: 'reference', width: 700, height: 900 }, keywords: '', forbiddenWords: '', targetStyle: 'story', revisionPrompt: '背景换成深蓝' }, { store, queue, storage, env: { AI_PROVIDER: 'mock' }, scheduleWorker: () => undefined });
+  const job = (await queue.dequeue())!.job;
+  expect(job).toMatchObject({ referenceKey: `tasks/${result.taskId}/reference`, referenceWidth: 700, referenceHeight: 900, targetStyle: 'story', revisionPrompt: '背景换成深蓝' });
+  expect(await storage.exists(job.referenceKey!)).toBe(true);
+  expect(JSON.stringify(job)).not.toContain('data:image');
+});

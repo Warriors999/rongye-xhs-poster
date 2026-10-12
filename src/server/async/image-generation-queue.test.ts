@@ -63,3 +63,12 @@ describe('InMemoryImageGenerationQueue', () => {
     expect(isQueueEnvelopeExpired({ ...envelope, claimedAt: 0 }, 1_000, 100)).toBe(true);
   });
 });
+
+
+it('retains bounded reference and regeneration metadata in Redis envelopes without bytes or secrets', () => {
+  const envelope = { id: 'message', receipt: 'receipt', claimedAt: 0, job: { ...job, referenceKey: 'tasks/task-1/reference', referenceWidth: 600, referenceHeight: 800, targetStyle: 'story' as const, revisionPrompt: '背景改成深蓝', apiKey: 'secret', referenceImageDataUrl: 'data:image/png;base64,AAAA' } };
+  const encoded = encodeQueueEnvelope(envelope);
+  expect(decodeQueueEnvelope(encoded)?.job).toMatchObject({ referenceKey: 'tasks/task-1/reference', referenceWidth: 600, referenceHeight: 800, targetStyle: 'story', revisionPrompt: '背景改成深蓝' });
+  expect(encoded).not.toContain('secret');
+  expect(encoded).not.toContain('data:image');
+});

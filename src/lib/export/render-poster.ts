@@ -1,4 +1,5 @@
 import type { PosterDraft, TextLayer } from '@/domain/project';
+import { imageSourceToDataUrl } from '@/lib/projects/image-source';
 
 export const POSTER_EXPORT_WIDTH = 1200;
 export const POSTER_EXPORT_HEIGHT = 1600;
@@ -137,6 +138,33 @@ export function downloadDataUrl(dataUrl: unknown, filename?: string) {
   link.href = dataUrl;
   link.download = sanitizeDownloadFilename(filename);
   link.click();
+}
+
+export async function saveImage(source: string, filename?: string, options: { preferShare?: boolean } = {}): Promise<'shared' | 'downloaded' | 'cancelled'> {
+  const dataUrl = await imageSourceToDataUrl(source);
+  const separator = dataUrl.indexOf(',');
+  const contentType = dataUrl.slice(5, dataUrl.indexOf(';'));
+  const binary = atob(dataUrl.slice(separator + 1));
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  const safeFilename = sanitizeDownloadFilename(filename);
+  const file = new File([bytes], safeFilename, { type: contentType });
+  if (options.preferShare !== false && navigator.share && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: '绒页海报' });
+      return 'shared';
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return 'cancelled';
+    }
+  }
+  const url = URL.createObjectURL(file);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = safeFilename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  return 'downloaded';
 }
 
 export function posterFilename(style: PosterDraft['style'], index?: number): string {

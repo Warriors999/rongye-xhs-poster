@@ -83,19 +83,37 @@ export async function POST(request: Request): Promise<Response> {
     return errorResponse(400, '请求格式无效');
   }
 
-  const imageDataUrl = values.get('imageDataUrl');
-  if (typeof imageDataUrl === 'string' && imageDataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
+  const isRegeneration = new URL(request.url).pathname === '/api/regenerate';
+  const imageDataUrl = values.get('imageDataUrl') ?? values.get('originalImageDataUrl');
+  const referenceImageDataUrl = values.get('referenceImageDataUrl') ?? undefined;
+  if ([imageDataUrl, referenceImageDataUrl].some((value) => typeof value === 'string' && value.length > MAX_IMAGE_DATA_URL_LENGTH)) {
     return errorResponse(413, '图片文件过大，请压缩后重试');
   }
   const widthValue = values.get('width');
   const heightValue = values.get('height');
+  let selectedPosterDesign: unknown;
+  let selectedPosterCopy: unknown;
+  try {
+    const designValue = values.get('selectedPosterDesign');
+    const copyValue = values.get('selectedPosterCopy');
+    if (designValue !== null) selectedPosterDesign = typeof designValue === 'string' ? JSON.parse(designValue) : designValue;
+    if (copyValue !== null) selectedPosterCopy = typeof copyValue === 'string' ? JSON.parse(copyValue) : copyValue;
+  } catch { return errorResponse(400, '请求参数无效，请检查所选方案'); }
+  if (isRegeneration && !values.get('targetStyle')) return errorResponse(400, '请选择需要重做的海报');
   const parsed = generationRequestSchema.safeParse({
     imageDataUrl,
     width: typeof widthValue === 'string' ? Number(widthValue) : Number.NaN,
     height: typeof heightValue === 'string' ? Number(heightValue) : Number.NaN,
     keywords: values.get('keywords') ?? '',
     forbiddenWords: values.get('forbiddenWords') ?? '',
-    creativeIdea: values.get('creativeIdea') ?? ''
+    creativeIdea: values.get('creativeIdea') ?? '',
+    referenceImageDataUrl,
+    referenceWidth: values.get('referenceWidth') === null ? undefined : Number(values.get('referenceWidth')),
+    referenceHeight: values.get('referenceHeight') === null ? undefined : Number(values.get('referenceHeight')),
+    targetStyle: values.get('targetStyle') ?? undefined,
+    revisionPrompt: values.get('revisionPrompt') ?? undefined,
+    selectedPosterDesign,
+    selectedPosterCopy
   });
   if (!parsed.success) return errorResponse(400, '请求参数无效，请检查图片、关键词和禁止词');
 
@@ -104,7 +122,12 @@ export async function POST(request: Request): Promise<Response> {
       image: { id: 'upload', dataUrl: parsed.data.imageDataUrl, width: parsed.data.width, height: parsed.data.height, source: 'upload' },
       keywords: parsed.data.keywords,
       forbiddenWords: parsed.data.forbiddenWords,
-      creativeIdea: parsed.data.creativeIdea
+      creativeIdea: parsed.data.creativeIdea,
+      ...(parsed.data.referenceImageDataUrl ? { referenceImage: { id: 'reference', dataUrl: parsed.data.referenceImageDataUrl, width: parsed.data.referenceWidth!, height: parsed.data.referenceHeight!, source: 'upload' as const } } : {}),
+      ...(parsed.data.targetStyle ? { targetStyle: parsed.data.targetStyle } : {}),
+      ...(parsed.data.revisionPrompt ? { revisionPrompt: parsed.data.revisionPrompt } : {}),
+      ...(parsed.data.selectedPosterDesign ? { selectedPosterDesign: parsed.data.selectedPosterDesign } : {}),
+      ...(parsed.data.selectedPosterCopy ? { selectedPosterCopy: parsed.data.selectedPosterCopy } : {})
     });
     return Response.json(task, { status: 202 });
   } catch (error) {

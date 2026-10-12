@@ -39,6 +39,69 @@ describe('poster store', () => {
     expect(usePosterStore.getState().step).toBe('upload');
   });
 
+  it('replaces only the requested poster and preserves other results and their selection', () => {
+    const original = { ...generation, posters: [
+      { ...createEmptyDraft(), style: 'lifestyle' as const },
+      { ...createEmptyDraft(), style: 'story' as const },
+      { ...createEmptyDraft(), style: 'editorial' as const }
+    ] };
+    usePosterStore.getState().startGeneration();
+    usePosterStore.getState().setGeneration(original);
+    usePosterStore.getState().selectDraft(original.posters[0]);
+    const before = usePosterStore.getState().generation!;
+    usePosterStore.getState().regenerateOne(original.posters[1], '背景更简洁');
+    expect(usePosterStore.getState().generation).toBe(before);
+    expect(usePosterStore.getState().revisionPrompt).toBe('背景更简洁');
+    const replacement = { ...original.posters[1], image: { ...upload, id: 'story-new' }, finalPrompt: '背景更简洁' };
+    usePosterStore.getState().setGeneration({ ...generation, posters: [replacement] });
+    const state = usePosterStore.getState();
+    expect(state.generation?.posters.map((poster) => poster.image.id)).toEqual(['empty', 'story-new', 'empty']);
+    expect(state.selectedDraft?.style).toBe('lifestyle');
+    expect(state.regenerationTarget).toBeNull();
+    expect(state.step).toBe('choose');
+  });
+
+  it('keeps all previous posters and copy when a single-poster redo fails', () => {
+    usePosterStore.getState().startGeneration();
+    usePosterStore.getState().setGeneration(generation);
+    usePosterStore.getState().selectDraft(generation.posters[0]);
+    usePosterStore.getState().openCopyComposer();
+    usePosterStore.getState().setCopyResult({ variants: [{ angle: '日常', title: '标题', body: '文案', tags: [] }] });
+    usePosterStore.getState().backToChoose();
+    const before = usePosterStore.getState().generation;
+    const beforeCopy = usePosterStore.getState().copyResult;
+    usePosterStore.getState().regenerateOne(generation.posters[0], '柔和一点');
+    usePosterStore.getState().failGeneration('稍后重试');
+    expect(usePosterStore.getState()).toMatchObject({ step: 'choose', error: '稍后重试', generation: before });
+    expect(usePosterStore.getState().selectedDraft).toEqual(generation.posters[0]);
+    expect(usePosterStore.getState().regenerationTarget).toBeNull();
+    expect(usePosterStore.getState().copyResult).toBe(beforeCopy);
+  });
+
+  it('rejects a redo result with the wrong direction without replacing previous posters', () => {
+    usePosterStore.getState().startGeneration();
+    usePosterStore.getState().setGeneration(generation);
+    const before = usePosterStore.getState().generation;
+    usePosterStore.getState().regenerateOne(generation.posters[0], '简单一点');
+    usePosterStore.getState().setGeneration({ ...generation, posters: [{ ...generation.posters[0], style: 'story' }] });
+    expect(usePosterStore.getState().generation).toBe(before);
+    expect(usePosterStore.getState()).toMatchObject({ step: 'choose', error: '这张海报没有完成重做，请重试', regenerationTarget: null });
+  });
+
+  it('clears optional copy only when its selected poster is replaced', () => {
+    usePosterStore.getState().startGeneration();
+    usePosterStore.getState().setGeneration(generation);
+    usePosterStore.getState().selectDraft(generation.posters[0]);
+    usePosterStore.getState().openCopyComposer();
+    usePosterStore.getState().setCopyResult({ variants: [{ angle: '日常', title: '标题', body: '文案', tags: [] }] });
+    usePosterStore.getState().backToChoose();
+    expect(usePosterStore.getState().copyResult).not.toBeNull();
+    usePosterStore.getState().regenerateOne(generation.posters[0], '柔和一点');
+    usePosterStore.getState().setGeneration({ ...generation, posters: [{ ...generation.posters[0], image: { ...upload, id: 'new' } }] });
+    expect(usePosterStore.getState().selectedDraft?.image.id).toBe('new');
+    expect(usePosterStore.getState().copyResult).toBeNull();
+  });
+
   it('creates an empty draft with a dynamic design brief and safe note', () => {
     const draft = createEmptyDraft();
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { copyGenerationResponseSchema } from '@/server/ai/contracts';
 import type { CopyGenerationResult } from '@/domain/project';
 import { usePosterStore } from '@/store/use-poster-store';
@@ -49,6 +49,12 @@ export function CopyScreen() {
   const backToChoose = usePosterStore((state) => state.backToChoose);
   const [busy, setBusy] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const requestRef = useRef<AbortController | null>(null);
+
+  useEffect(() => () => {
+    requestRef.current?.abort();
+    requestRef.current = null;
+  }, []);
 
   if (!upload || !selectedDraft) {
     return <main className="placeholder-screen"><p>请先选择一张海报</p></main>;
@@ -58,8 +64,15 @@ export function CopyScreen() {
     if (busy) return;
     setBusy(true);
     setCopyError('');
+    const controller = new AbortController();
+    requestRef.current = controller;
+    const currentRequest = () => {
+      const state = usePosterStore.getState();
+      return !controller.signal.aborted && requestRef.current === controller && state.step === 'copy' && state.upload?.dataUrl === upload.dataUrl && state.selectedDraft?.image.dataUrl === selectedDraft.image.dataUrl && state.selectedDraft?.style === selectedDraft.style;
+    };
     try {
       const posterDataUrl = await imageSourceToDataUrl(selectedDraft.image.dataUrl);
+      if (!currentRequest()) return;
       const form = new FormData();
       form.append('originalImageDataUrl', upload.dataUrl);
       form.append('originalWidth', String(upload.width));
@@ -73,7 +86,7 @@ export function CopyScreen() {
       form.append('creativeIdea', creativeIdea);
       form.append('prompt', copyPrompt);
 
-      const response = await fetch('/api/copy', { method: 'POST', body: form });
+      const response = await fetch('/api/copy', { method: 'POST', body: form, signal: controller.signal });
       let body: unknown;
       try {
         body = await response.json();
@@ -83,11 +96,11 @@ export function CopyScreen() {
       if (!response.ok) throw new Error(errorMessageFromBody(body));
       const parsed = copyGenerationResponseSchema.safeParse(body);
       if (!parsed.success) throw new Error('文案生成结果格式异常，请重试');
-      setCopyResult(parsed.data as CopyGenerationResult);
+      if (currentRequest()) setCopyResult(parsed.data as CopyGenerationResult);
     } catch (error) {
-      setCopyError(error instanceof Error ? error.message : '文案生成服务暂时不可用，请重试');
+      if (currentRequest()) setCopyError(error instanceof Error ? error.message : '文案生成服务暂时不可用，请重试');
     } finally {
-      setBusy(false);
+      if (requestRef.current === controller) { requestRef.current = null; setBusy(false); }
     }
   };
 

@@ -71,3 +71,15 @@ describe('POST /api/generate', () => {
     expect((await POST(requestWithStream)).status).toBe(413);
   });
 });
+
+
+it('accepts a style reference with dimensions and validates incomplete reference uploads', async () => {
+  resetAsyncRuntimeForTests();
+  process.env.AI_PROVIDER = 'mock';
+  const response = await POST(request({ ...uploadFields, referenceImageDataUrl: 'data:image/png;base64,BBBB', referenceWidth: '500', referenceHeight: '700' }));
+  expect(response.status).toBe(202);
+  const body = await response.json();
+  expect(await getAsyncRuntime().storage.exists(`tasks/${body.taskId}/reference`)).toBe(true);
+  const incomplete = await POST(request({ ...uploadFields, referenceImageDataUrl: 'data:image/png;base64,BBBB' }));
+  expect(incomplete.status).toBe(400);
+});

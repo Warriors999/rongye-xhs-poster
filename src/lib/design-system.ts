@@ -29,14 +29,22 @@ const COPY_SAFETY = [
   '只允许短标题、短辅助句和最多两个标签'
 ];
 
-const UNSUPPORTED_DESIGN_TEXT_PATTERNS = [
-  /价格|售价|¥|￥|\$|元|日期|时间|编号|序号|名称|商品名|品名|品牌|销量|规格|尺寸|新品|上新|限时|特价|折扣|伪文字|虚构|编造|水印|logo|固定坐标|左上角|右上角|左下角|右下角|第二个主体|额外主体|第二个玩偶|人物|额外文字|\d+|(?:vol|no)\.?\s*\d+|第\s*\d+\s*(?:期|集|册)/i,
-  /(?:忽略|覆盖|替换|更换|换成|变更|改变|重绘|复制)(?:以上|之前|先前|前面|现有|当前|上述|上传的?)?(?:的)?(?:设计规则|规则|指令|限制|要求|提示|主体|玩偶)?|新(?:角色|主体|人物|玩偶)|重新构图|重新排版|重新设计|另一个(?:角色|主体|玩偶)|(?:主体|角色|玩偶|人物|形象|对象).{0,12}(?:增加|新增|添加|加入|引入|再加|多加|更换|替换|换成|改成|改为|变成)|(?:增加|新增|添加|加入|引入|再加|多加|更换|替换|换成|改成|改为|变成)[^，。；！？\n]{0,12}(?:主体|角色|玩偶|人物|形象|对象)|(?:主体|玩偶).{0,20}(?:轮廓|姿态|颜色|材质)|(?:轮廓|姿态|颜色|材质).{0,20}(?:改变|变更)/i,
-  /(?:\b(?:ignore|override|disregard|rewrite|replace|change|redraw|recompose|reconstruct|copy)\b|\b(?:previous|prior|above|existing)\s+(?:design\s+)?(?:rules|instructions|directions|constraints)\b)/i,
-  /(?:\b(?:add|introduce|include|insert|bring\s+in|switch|replace|change|turn)\b[^.!?,;:\n]{0,40}\b(?:subject|character|doll|person|role|object)\b|\b(?:subject|character|doll|person|role|object)\b[^.!?,;:\n]{0,40}\b(?:add|introduce|include|insert|bring\s+in|switch|replace|change|turn)\b|\b(?:use|choose|select|pick)\s+(?:(?:a|an|the)\s+)?(?:another|different|new)\s+(?:subject|character|doll|person|role|object)\b)/i
+// Guard changes to the actual subject, rather than any action later in its sentence.
+const INSTRUCTION_INJECTION_PATTERNS = [
+  /(?:忽略|覆盖|改写|替换|更换|变更)(?:以上|之前|先前|前面|现有|当前|上述)?(?:的)?(?:设计规则|规则|指令|限制|要求|提示)|新(?:角色|主体|人物|玩偶)|另一个(?:角色|主体|玩偶)|人物|人像|手指|^复制$/i,
+  /(?:增加|新增|添加|加入|引入|再加|多加|更换|替换|换成|改成|改为|变成|改变|变更|重绘|复制)(?:为|成|一个|一只|一位|第二个|另外|另一个|新的|上传的?|真实的?|原有的?|的|\s)*(?:主体|角色|玩偶|人物|形象|对象)|(?:主体|角色|玩偶|人物|形象|对象)(?:的)?(?:(?:轮廓|姿态|颜色|材质|身份|外形|比例)(?:被|的)?)?(?:被)?(?:更换|替换|换成|改成|改为|变成|改变|变更|重绘|复制)/i,
+  /(?:重绘|复制|替换|更换|改变)(?:整张|整个|原始|上传|原图|的|\s)*(?:照片|图片|图像)|(?:上传|原始)(?:照片|图片|图像)[^，。；！？\n]{0,12}(?:改成|变成|替换|重绘)(?:插画|卡通|新|其他)?/i,
+  /\b(?:ignore|override|disregard)\b|\b(?:rewrite|replace|change)\s+(?:(?:previous|prior|above|existing)\s+)?(?:design\s+)?(?:rules|instructions|directions|constraints)\b|\b(?:human|person|people|finger)s?\b/i,
+  /\b(?:add|introduce|include|insert|bring\s+in|switch|replace|change|turn|redraw|copy)\s+(?:(?:with|to|into|a|an|the|another|different|new|second|uploaded|original|real)\s+)*(?:subject|character|doll|person|role|object)\b|\b(?:subject|character|doll|person|role|object)(?:\s+(?:identity|colors?|silhouette|pose|material|proportions?))?\s+(?:(?:is|are|must|be|to)\s+)*(?:replaced|changed|redrawn|copied|switched|turned)\b|\b(?:use|choose|select|pick)\s+(?:(?:a|an|the)\s+)?(?:another|different|new)\s+(?:subject|character|doll|person|role|object)\b/i,
+  /\b(?:redraw|copy|replace|change)\s+(?:(?:the|entire|whole|uploaded|original|source)\s+)*(?:photo|photograph|image|picture)\b/i
 ] as const;
 
-const INSTRUCTION_INJECTION_PATTERNS = UNSUPPORTED_DESIGN_TEXT_PATTERNS.slice(1);
+const UNSUPPORTED_DESIGN_TEXT_PATTERNS = [
+  /价格|售价|¥|￥|\$|日期|时间|编号|序号|名称|商品名|品名|品牌|销量|规格|尺寸|新品|上新|限时|特价|折扣|伪文字|虚构|编造|水印|logo|第二个主体|额外主体|第二个玩偶|额外文字/i,
+  /\d+(?:\.\d+)?\s*(?:元|人民币|美元|yuan|rmb|usd)|\b(?:price\s+tag|sale\s+price|brand\s+name)\b|\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b|\d{4}\s*年|第\s*[\d一二三四五六七八九十]+\s*(?:期|集|册)|\b(?:vol|no)\.?\s*\d+/i,
+  /(?:标题|文案|吊牌|标签|标记)[^，。；！？\n]{0,12}(?:写|加上|标注|印|显示|绘制)\s*\d+(?:\.\d+)?(?![\d.]|\s*(?:px|%|像素|列|级|[:：/]\s*\d))|\b(?:label|title|caption)\s+(?:reading|saying)\s+\d+/i,
+  ...INSTRUCTION_INJECTION_PATTERNS
+] as const;
 
 function containsUnsupportedDesignText(value: string): boolean {
   return UNSUPPORTED_DESIGN_TEXT_PATTERNS.some((pattern) => pattern.test(value));
@@ -91,19 +99,19 @@ function baseBrief(direction: PosterDirection, research: ResearchSummary): Desig
   const material = safeText(research.material, '以图片中的真实材质和纹理为准。');
   const composition = safeText(research.composition, '保留主体清晰度和安全留白，根据内容动态组织视觉动线。');
   const typography = safeText(research.typography, '短标题、短辅助句和少量标签，形成清晰字号层级。');
-  const density = safeText(research.density, '低密度，装饰少而有秩序。');
+  const density = safeText(research.density, '根据概念安排有秩序的疏密对比，主体与文字保持清晰。');
 
   return {
     label: SLOT_LABELS[direction],
     direction,
     concept: '根据上传主体、用户创作意图和研究资料提炼一个独立视觉概念。',
-    layout: `${composition} 根据本方案的独立概念动态决定构图、视线和留白，不使用固定坐标或固定版式。`,
+    layout: `${composition} 根据本方案的独立概念动态决定构图、视线和留白，可明确描述主体位置、画面占比、背景变化和排版坐标，但不改动玩偶本身。`,
     scene: `根据用户创作意图和研究资料动态生成场景，保留${material}，不添加无关道具。`,
     elements: [material],
     palette: researchPalette(research),
-    typography: `${typography} 根据本方案概念动态决定文字关系，不添加事实信息。${COPY_SAFETY.join('；')}`,
+    typography: `${typography} 根据本方案概念动态决定文字关系，不添加事实信息。`,
     hierarchy: `真实玩偶主视觉 > 短标题 > 短辅助句 > 最多两个标签；${density}`,
-    mood: '由上传主体、用户意图和研究资料共同决定，克制、有设计感。',
+    mood: '由上传主体、用户意图和研究资料共同决定，可鲜明、戏剧化或安静，不默认暖色与低饱和。',
     negative: unique([
       '三个方案必须使用不同的主要构图、视觉语言、配色关系和元素组合',
       '不得把三个方案做成同一张模板的轻微换色版本',
@@ -119,7 +127,7 @@ function safeCandidateNegative(value: unknown): string[] {
 
 function mergeCandidateText(base: string, value: unknown): string {
   const candidate = safeText(value, '');
-  return candidate ? `${base} ${candidate}` : base;
+  return candidate ? `${candidate} ${base}` : base;
 }
 
 /**

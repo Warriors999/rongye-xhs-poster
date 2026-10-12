@@ -1,5 +1,29 @@
 import { describe, expect, it, vi } from 'vitest';
-import { downloadDataUrl, posterFilename } from './render-poster';
+import { downloadDataUrl, posterFilename, saveImage } from './render-poster';
+
+describe('saveImage', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('opens native file sharing when supported', async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'share', { configurable: true, get: () => share });
+    Object.defineProperty(navigator, 'canShare', { configurable: true, get: () => () => true });
+    expect(await saveImage('data:image/png;base64,AAAA', '我的海报.png')).toBe('shared');
+    expect(share.mock.calls[0][0].files[0].name).toBe('我的海报.png');
+    expect(share.mock.calls[0][0].files[0].type).toBe('image/png');
+  });
+
+  it('downloads a Blob URL when file sharing is unavailable', async () => {
+    Object.defineProperty(navigator, 'share', { configurable: true, get: () => undefined });
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:poster-download') });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    expect(await saveImage('data:image/png;base64,AAAA', '海报.png')).toBe('downloaded');
+    const anchor = click.mock.instances[0] as unknown as HTMLAnchorElement;
+    expect(anchor.href).toBe('blob:poster-download');
+    expect(anchor.download).toBe('海报.png');
+  });
+});
 
 describe('downloadDataUrl', () => {
   it('downloads image data URLs and sanitizes the filename', () => {

@@ -1,17 +1,12 @@
-import type { ImageAsset } from '@/domain/project';
+import type { GenerationInput } from '@/domain/project';
 import { generatePosters } from '@/server/generation/generate-posters';
 import { decodeImageDataUrl } from './image-data';
 import { scheduleInProcessWorker, type WorkerRuntime } from './image-generation-worker';
 import { getAsyncRuntime, type AsyncRuntime } from './runtime';
-import { originalKeyFor, type GenerationQueue, type TaskStore } from './task-types';
+import { originalKeyFor, referenceKeyFor, type GenerationQueue, type TaskStore } from './task-types';
 import type { ObjectStorage } from '@/server/storage/r2';
 
-export interface TaskSubmissionInput {
-  image: ImageAsset;
-  keywords: string;
-  forbiddenWords: string;
-  creativeIdea?: string;
-}
+export interface TaskSubmissionInput extends GenerationInput {}
 
 export interface TaskSubmissionDependencies {
   store?: TaskStore;
@@ -27,6 +22,7 @@ export async function submitGenerationTask(input: TaskSubmissionInput, dependenc
     ? { store: dependencies.store, queue: dependencies.queue, storage: dependencies.storage, env }
     : getAsyncRuntime(env);
   const decoded = decodeImageDataUrl(input.image.dataUrl);
+  const reference = input.referenceImage ? decodeImageDataUrl(input.referenceImage.dataUrl) : undefined;
   const task = await runtime.store.create({
     originalKey: undefined,
     originalWidth: input.image.width,
@@ -39,12 +35,19 @@ export async function submitGenerationTask(input: TaskSubmissionInput, dependenc
   try {
     if (task.originalKey !== originalKey) await runtime.store.update(task.taskId, { });
     await runtime.storage.put(originalKey, decoded.bytes, decoded.contentType);
+    const referenceKey = reference ? referenceKeyFor(task.taskId) : undefined;
+    if (reference && referenceKey) await runtime.storage.put(referenceKey, reference.bytes, reference.contentType);
     const job = {
       taskId: task.taskId,
       originalKey,
       keywords: task.keywords,
       forbiddenWords: task.forbiddenWords,
       creativeIdea: task.creativeIdea,
+      ...(referenceKey && input.referenceImage ? { referenceKey, referenceWidth: input.referenceImage.width, referenceHeight: input.referenceImage.height } : {}),
+      ...(input.targetStyle ? { targetStyle: input.targetStyle } : {}),
+      ...(input.revisionPrompt ? { revisionPrompt: input.revisionPrompt } : {}),
+      ...(input.selectedPosterDesign ? { selectedPosterDesign: input.selectedPosterDesign } : {}),
+      ...(input.selectedPosterCopy ? { selectedPosterCopy: input.selectedPosterCopy } : {}),
       config: { mode: env.AI_PROVIDER?.trim().toLowerCase() && env.AI_PROVIDER.trim().toLowerCase() !== 'mock' ? 'configured' as const : 'mock' as const }
     };
     await runtime.queue.enqueue(job);

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createEmptyDraft, defaultResearchSummary, type GenerationResult, type ImageAsset } from '@/domain/project';
 import { usePosterStore } from '@/store/use-poster-store';
 import { CopyScreen } from './CopyScreen';
@@ -42,6 +42,24 @@ describe('CopyScreen', () => {
 
     expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '生成小红书文案' })).toBeInTheDocument();
+  });
+
+  it('aborts a departing request and ignores its late response after opening another poster', async () => {
+    let finish: (response: Response) => void = () => undefined;
+    vi.mocked(fetch).mockImplementation(() => new Promise<Response>((resolve) => { finish = resolve; }));
+    const first = render(<CopyScreen />);
+    fireEvent.click(screen.getByRole('button', { name: '生成小红书文案' }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+    const signal = vi.mocked(fetch).mock.calls[0][1]?.signal;
+    first.unmount();
+    usePosterStore.getState().backToChoose();
+    usePosterStore.getState().selectDraft({ ...generation.posters[0], style: 'lifestyle', image: { ...upload, id: 'other-poster' } });
+    usePosterStore.getState().openCopyComposer();
+    render(<CopyScreen />);
+    await act(async () => { finish(new Response(JSON.stringify({ variants: [{ angle: '旧请求', title: '旧海报文案', body: '不应覆盖新海报', tags: ['#手作'] }] }), { status: 200 })); });
+    expect(usePosterStore.getState().copyResult).toBeNull();
+    expect(signal?.aborted).toBe(true);
+    expect(screen.queryByText('旧海报文案')).not.toBeInTheDocument();
   });
 
   it('sends both images only after explicit confirmation and renders the returned options', async () => {

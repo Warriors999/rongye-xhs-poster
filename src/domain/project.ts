@@ -55,10 +55,10 @@ export const defaultResearchSummary: ResearchSummary = {
   query: '内置设计知识库',
   sources: [{ title: '内置设计知识库' }],
   composition: '主体清晰，保留安全留白和单一视觉重心。',
-  palette: '以主体真实颜色为准，使用低饱和辅助色。',
+  palette: '以主体真实颜色为锚点，探索鲜明互补、深浅对比或柔和同色关系，由创意概念决定。',
   material: '以图片中的真实材质和纹理为准。',
   typography: '短标题、短辅助句和少量标签，层级清晰。',
-  density: '低密度，装饰少而有秩序。',
+  density: '根据概念选择疏朗或丰富的层次，信息有秩序，主体与文字始终清晰。',
   fallback: true
 };
 
@@ -116,6 +116,8 @@ export interface PosterDraft {
   layers: PosterLayers;
   design?: DesignBrief;
   designNote: string;
+  /** Exact sanitized prompt sent to the image generator. */
+  finalPrompt?: string;
 }
 
 export interface GenerationInput {
@@ -123,6 +125,11 @@ export interface GenerationInput {
   keywords: string;
   forbiddenWords: string;
   creativeIdea?: string;
+  referenceImage?: ImageAsset;
+  targetStyle?: PosterStyle;
+  revisionPrompt?: string;
+  selectedPosterDesign?: DesignBrief;
+  selectedPosterCopy?: CopyData;
 }
 
 export interface GenerationResult {

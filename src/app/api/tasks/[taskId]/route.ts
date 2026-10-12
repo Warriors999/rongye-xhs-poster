@@ -1,4 +1,5 @@
 import { assetKeyFor, isTaskId } from '@/server/async/task-types';
+import { posterDraftSchema } from '@/server/ai/contracts';
 import { getAsyncRuntime } from '@/server/async/runtime';
 
 export const runtime = 'nodejs';
@@ -43,9 +44,21 @@ export async function GET(request: Request, context: TaskRouteContext): Promise<
         analysis: task.result.analysis,
         research: task.result.research,
         posters: task.result.posters.map((poster) => ({
-          ...poster,
+          style: poster.style,
+          copy: poster.copy,
+          background: poster.background,
+          layers: poster.layers,
+          design: poster.design,
+          designNote: poster.designNote,
+          ...(posterDraftSchema.shape.finalPrompt.safeParse(poster.finalPrompt).success && typeof poster.finalPrompt === 'string' ? { finalPrompt: poster.finalPrompt } : {}),
           image: {
-            ...poster.image,
+            id: poster.image.id ?? `poster-${poster.style}`,
+            assetKey: poster.image.assetKey,
+            contentType: poster.image.contentType,
+            width: poster.image.width,
+            height: poster.image.height,
+            source: poster.image.source ?? 'beautified',
+            ...(poster.image.mode ? { mode: poster.image.mode } : {}),
             assetUrl: `/api/tasks/${taskId}?asset=${poster.style}`
           }
         })),

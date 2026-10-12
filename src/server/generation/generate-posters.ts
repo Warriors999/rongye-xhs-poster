@@ -1,7 +1,7 @@
-import { defaultResearchSummary, createEmptyDraft, type BeautifyMode, type DesignBrief, type ImageAsset, type PosterDraft, type PosterStyle, type ResearchSummary } from '@/domain/project';
+import { defaultResearchSummary, createEmptyDraft, type BeautifyMode, type DesignBrief, type GenerationInput as DomainGenerationInput, type ImageAsset, type PosterDraft, type PosterStyle, type ResearchSummary } from '@/domain/project';
 import { resolveDesignBrief, sanitizeDesignText } from '@/lib/design-system';
 import { getImageProvider, getProvider, getReferenceResearcher, type GenerationInput, type Provider, type ProviderDependencies } from '@/server/ai/provider';
-import { IMAGE_FORMAT_ERROR, IMAGE_PROVIDER_UNAVAILABLE_ERROR, isRetryableImageError, type ImageBeautifier } from '@/server/ai/image-provider';
+import { buildPosterPrompt, IMAGE_FORMAT_ERROR, IMAGE_PROVIDER_UNAVAILABLE_ERROR, isRetryableImageError, type ImageBeautifier } from '@/server/ai/image-provider';
 import type { QualityChecker } from '@/server/ai/quality-provider';
 import { consumeRetryBudget, createCombinedSignal, createRetryBudget, throwIfAborted, withDeadline, type AICallOptions } from '@/server/ai/call-options';
 import type { GenerateResponse } from '@/server/ai/contracts';
@@ -35,12 +35,9 @@ const DEFAULT_INTERNAL_NAMES = [
 ] as const;
 const MAX_OUTPUT_IMAGE_DATA_URL_LENGTH = 10_000_000;
 
-export interface GeneratePostersInput {
-  image: ImageAsset;
-  keywords: string;
-  forbiddenWords: string;
-  creativeIdea?: string;
-}
+export interface GeneratePostersInput extends DomainGenerationInput {}
+
+export type GenerationPhase = 'researching' | 'designing' | 'generating' | 'checking';
 
 export interface GeneratePostersDependencies {
   env?: Record<string, string | undefined>;
@@ -54,6 +51,7 @@ export interface GeneratePostersOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
   dependencies?: GeneratePostersDependencies;
+  onPhase?: (phase: GenerationPhase) => void | Promise<void>;
 }
 
 export class GenerationAbortedError extends Error {
@@ -276,7 +274,8 @@ function safePoster(security: OutputSecurity, poster: PosterDraft, image: ImageA
     background: typeof poster.background === 'string' && /^#[0-9a-fA-F]{6}$/.test(poster.background) ? poster.background : '#FFFAF4',
     layers: safeLayers,
     design: safeDesignBrief(security, style, poster.design ?? {}, research),
-    designNote: security.clean(sanitizeDesignText(poster.designNote, fallbackDesign.mood, 200), fallbackDesign.mood, 200)
+    designNote: security.clean(sanitizeDesignText(poster.designNote, fallbackDesign.mood, 200), fallbackDesign.mood, 200),
+    ...(typeof poster.finalPrompt === 'string' && poster.finalPrompt.length <= 20000 && !security.isForbidden(poster.finalPrompt) && !SENSITIVE_RESPONSE_TEXT.test(poster.finalPrompt) ? { finalPrompt: poster.finalPrompt } : {})
   };
 }
 
@@ -313,19 +312,17 @@ function throwIfOperationAborted(signal: AbortSignal): void {
 
 async function beautifyOnce(imageProvider: ImageBeautifier, poster: PosterDraft, sourceImage: ImageAsset, options: AICallOptions, qualityIssues?: string[]): Promise<PosterDraft> {
   throwIfOperationAborted(options.signal!);
-  const image = await withDeadline(() => imageProvider.beautify({
-      image: sourceImage,
-      mode: visualModes[poster.style],
-      poster: {
-        style: poster.style,
-        copy: poster.copy,
-        design: poster.design ?? resolveDesignBrief(poster.style, {}),
-        designNote: poster.designNote,
-        qualityIssues
-      }
-    }, options), options.signal!);
+  const posterInput = {
+    style: poster.style,
+    copy: poster.copy,
+    design: poster.design ?? resolveDesignBrief(poster.style, {}),
+    designNote: poster.designNote,
+    qualityIssues
+  };
+  const finalPrompt = buildPosterPrompt(posterInput);
+  const image = await withDeadline(() => imageProvider.beautify({ image: sourceImage, mode: visualModes[poster.style], poster: posterInput }, options), options.signal!);
   throwIfOperationAborted(options.signal!);
-  return { ...poster, image };
+  return { ...poster, image, finalPrompt };
 }
 
 async function beautifyWithBusinessRetry(imageProvider: ImageBeautifier, poster: PosterDraft, sourceImage: ImageAsset, signal: AbortSignal, qualityIssues?: string[], retryCount = MAX_BUSINESS_RETRIES): Promise<PosterDraft> {
@@ -353,6 +350,7 @@ export async function generatePosters(input: GeneratePostersInput, options: Gene
 
   try {
     throwIfOperationAborted(signal);
+    await options.onPhase?.('researching');
     let research = safeResearch(defaultResearchSummary, security);
     try {
       research = safeResearch(await withDeadline(
@@ -364,6 +362,7 @@ export async function generatePosters(input: GeneratePostersInput, options: Gene
     }
     throwIfOperationAborted(signal);
 
+    await options.onPhase?.('designing');
     const providerInput: GenerationInput = { ...input, research };
     const result = await withDeadline(() => createProvider(providerDependencies).generate(providerInput, callOptions), signal);
     throwIfOperationAborted(signal);
@@ -375,7 +374,11 @@ export async function generatePosters(input: GeneratePostersInput, options: Gene
       throw new ImageGenerationError();
     }
 
-    const preparedPosters = result.posters.map((poster) => safePoster(security, poster, input.image, research));
+    const candidates = input.targetStyle
+      ? [result.posters.find((poster) => directionForStyle(poster.style) === directionForStyle(input.targetStyle!)) ?? result.posters[0]].filter(Boolean).map((poster) => ({ ...poster, style: directionForStyle(input.targetStyle!) }))
+      : result.posters;
+    const preparedPosters = candidates.map((poster) => safePoster(security, input.targetStyle && input.selectedPosterCopy ? { ...poster, copy: input.selectedPosterCopy } : poster, input.image, research));
+    await options.onPhase?.('generating');
     const warnings: string[] = [];
     const generated = await withDeadline(
       () => Promise.allSettled(preparedPosters.map((poster) => beautifyWithBusinessRetry(imageProvider, poster, input.image, signal))),
@@ -393,6 +396,7 @@ export async function generatePosters(input: GeneratePostersInput, options: Gene
     if (successfulPosters.length === 0) throw new ImageGenerationError();
 
     // 先把图片模型的真实结果直接交给前端。质量检查不能把生成结果静默替换成原图。
+    await options.onPhase?.('checking');
     const checkedPosters = successfulPosters;
 
     return {

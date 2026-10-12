@@ -551,3 +551,24 @@ describe('GeminiProvider', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });
+
+
+it('sends the style reference after the identity image using native Gemini inline data', async () => {
+  const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(completion) }] } }] })));
+  const provider = new GeminiProvider({ env: { AI_VISION_BASE_URL: 'https://example.test', AI_VISION_API_KEY: 'test-key', AI_VISION_MODEL: 'gemini-3.1-flash-lite' }, fetchImpl });
+  await provider.generate({ ...input, referenceImage: { ...input.image, id: 'reference', dataUrl: 'data:image/png;base64,BBBB' } });
+  const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+  const images = body.contents[0].parts.filter((part: { inline_data?: unknown }) => part.inline_data);
+  expect(images.map((part: { inline_data: { data: string } }) => part.inline_data.data)).toEqual(['AAAA', 'BBBB']);
+  expect(body.contents[0].parts[0].text).toContain('第二张图片仅为风格与构图参考');
+});
+
+
+it('keeps a single revised Gemini concept in the selected slot when model style is omitted', async () => {
+  const single = { ...completion, posters: [{ copy: { title: '深蓝手作', description: '柔软的陪伴。', tags: ['#手作'] }, design: { label: '宝蓝舞台', scene: '深蓝几何舞台' } }] };
+  const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(single) }] } }] })));
+  const provider = new GeminiProvider({ env: { AI_VISION_BASE_URL: 'https://example.test', AI_VISION_API_KEY: 'test-key', AI_VISION_MODEL: 'gemini-3.1-flash-lite' }, fetchImpl });
+  const result = await provider.generate({ ...input, targetStyle: 'story', revisionPrompt: '深蓝' });
+  expect(result.posters).toHaveLength(1);
+  expect(result.posters[0]).toMatchObject({ style: 'story', copy: { title: '深蓝手作' }, design: { label: '宝蓝舞台' } });
+});

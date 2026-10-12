@@ -6,7 +6,7 @@ export default defineConfig({
     baseURL: 'http://127.0.0.1:3000'
   },
   webServer: {
-    command: 'AI_PROVIDER=mock REFERENCE_RESEARCH_URL= REFERENCE_RESEARCH_API_KEY= pnpm dev',
+    command: 'AI_PROVIDER=mock REFERENCE_RESEARCH_URL= REFERENCE_RESEARCH_API_KEY= pnpm start',
     url: 'http://127.0.0.1:3000',
     reuseExistingServer: false
   },

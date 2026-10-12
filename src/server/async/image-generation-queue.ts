@@ -1,4 +1,5 @@
 import Redis from 'ioredis';
+import { copyDataSchema, designBriefSchema, posterStyleSchema } from '@/server/ai/contracts';
 import { randomUUID } from 'node:crypto';
 import { cloneTaskValue, type GenerationJob, type GenerationQueue, type QueueMessage } from './task-types';
 
@@ -15,12 +16,23 @@ export interface QueueEnvelope {
 }
 
 function cloneJob(job: GenerationJob): GenerationJob {
+  const style = posterStyleSchema.safeParse(job.targetStyle);
+  const design = designBriefSchema.safeParse(job.selectedPosterDesign);
+  const copy = copyDataSchema.safeParse(job.selectedPosterCopy);
+  const hasReference = typeof job.referenceKey === 'string'
+    && job.referenceKey === `tasks/${job.taskId}/reference`
+    && [job.referenceWidth, job.referenceHeight].every((edge) => typeof edge === 'number' && Number.isInteger(edge) && edge > 0 && edge <= 1600);
   return cloneTaskValue({
     taskId: job.taskId,
     originalKey: job.originalKey,
     keywords: job.keywords,
     forbiddenWords: job.forbiddenWords,
     creativeIdea: job.creativeIdea,
+    ...(hasReference ? { referenceKey: job.referenceKey, referenceWidth: job.referenceWidth, referenceHeight: job.referenceHeight } : {}),
+    ...(style.success ? { targetStyle: style.data } : {}),
+    ...(typeof job.revisionPrompt === 'string' ? { revisionPrompt: job.revisionPrompt.slice(0, 500) } : {}),
+    ...(design.success ? { selectedPosterDesign: design.data } : {}),
+    ...(copy.success ? { selectedPosterCopy: copy.data } : {}),
     config: { mode: job.config.mode }
   });
 }

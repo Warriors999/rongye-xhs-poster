@@ -1,4 +1,4 @@
-import { defaultResearchSummary, type ImageAsset, type ResearchSummary } from '@/domain/project';
+import { defaultResearchSummary, type GenerationInput as DomainGenerationInput, type ResearchSummary } from '@/domain/project';
 import type { GenerateResponse } from './contracts';
 import { MockProvider } from './mock-provider';
 import { OpenAICompatibleProvider } from './openai-compatible-provider';
@@ -10,11 +10,7 @@ import { getQualityChecker as createQualityChecker, type QualityChecker } from '
 import type { AICallOptions } from './call-options';
 import { resolveAIConfig } from './config';
 
-export interface GenerationInput {
-  image: ImageAsset;
-  keywords: string;
-  forbiddenWords: string;
-  creativeIdea?: string;
+export interface GenerationInput extends DomainGenerationInput {
   /** Optional during the compatibility window; the provider falls back locally. */
   research?: ResearchSummary;
 }

@@ -82,7 +82,7 @@ function asBackground(value: unknown, fallback: string): string {
   return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback;
 }
 
-function normalizePosters(value: unknown, image: ImageAsset, research: GenerationInput['research']): unknown {
+function normalizePosters(value: unknown, image: ImageAsset, research: GenerationInput['research'], targetStyle?: GenerationInput['targetStyle']): unknown {
   const record = recordValue(value);
   const rawPosters = Array.isArray(record.posters) ? record.posters : [];
   const slots: Array<Record<string, unknown> | undefined> = DYNAMIC_DIRECTIONS.map(() => undefined);
@@ -96,8 +96,12 @@ function normalizePosters(value: unknown, image: ImageAsset, research: Generatio
     if (slot >= 0) slots[slot] = poster;
   }
 
-  const posters = DYNAMIC_DIRECTIONS.map((direction, index) => {
-    const candidate = slots[index] ?? {};
+  const directions = targetStyle ? [directionForStyle(targetStyle)] : DYNAMIC_DIRECTIONS;
+  const posters = directions.map((direction) => {
+    const index = DYNAMIC_DIRECTIONS.indexOf(direction);
+    const candidate = targetStyle
+      ? recordValue(rawPosters.find((raw) => directionForStyle(recordValue(raw).style) === direction) ?? rawPosters[0])
+      : slots[index] ?? {};
     const fallback = createEmptyDraft();
     const candidateCopy = recordValue(candidate.copy);
     const [fallbackTitle, fallbackDescription] = DEFAULT_COPIES[index];
@@ -178,7 +182,8 @@ export class OpenAICompatibleProvider implements Provider {
       response_format: { type: 'json_object' },
       messages: [{ role: 'user', content: [
         { type: 'text', text: buildGenerationPrompt(input) },
-        { type: 'image_url', image_url: { url: input.image.dataUrl } }
+        { type: 'image_url', image_url: { url: input.image.dataUrl } },
+        ...(input.referenceImage ? [{ type: 'image_url', image_url: { url: input.referenceImage.dataUrl } }] : [])
       ] }]
     };
     for (let formatAttempt = 0; formatAttempt <= MAX_FORMAT_RETRIES; formatAttempt += 1) {
@@ -211,7 +216,7 @@ export class OpenAICompatibleProvider implements Provider {
       try {
         const content = envelope?.choices?.[0]?.message?.content;
         const value = typeof content === 'string' ? JSON.parse(content) : content;
-        return generateResponseSchema.parse(normalizePosters(withLegacyDefaults(value), input.image, input.research));
+        return generateResponseSchema.parse(normalizePosters(withLegacyDefaults(value), input.image, input.research, input.targetStyle));
       } catch {
         if (formatAttempt < MAX_FORMAT_RETRIES) continue;
         throw new Error(GENERATION_FORMAT_ERROR);

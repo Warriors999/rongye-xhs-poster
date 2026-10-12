@@ -57,7 +57,7 @@ export const researchSummarySchema = z.object({
   fallback: z.boolean().optional()
 });
 
-const designBriefSchema = z.object({
+export const designBriefSchema = z.object({
   label: designLabel.optional(),
   direction: posterDirectionSchema,
   concept: designConcept,
@@ -161,7 +161,8 @@ export const posterDraftSchema = z.object({
   background: z.string().max(MAX_BACKGROUND_LENGTH).regex(/^#[0-9a-fA-F]{6}$/),
   layers: posterLayersSchema,
   design: designBriefSchema.optional(),
-  designNote: nonEmptyText
+  designNote: nonEmptyText,
+  finalPrompt: z.string().trim().min(1).max(20000).optional()
 });
 
 export const generationRequestSchema = z.object({
@@ -170,7 +171,20 @@ export const generationRequestSchema = z.object({
   height: boundedDimension,
   keywords: z.string().max(500).default(''),
   forbiddenWords: z.string().max(300).default(''),
-  creativeIdea: z.string().max(500).default('')
+  creativeIdea: z.string().max(500).default(''),
+  referenceImageDataUrl: imageDataUrlSchema.optional(),
+  referenceWidth: boundedDimension.optional(),
+  referenceHeight: boundedDimension.optional(),
+  targetStyle: posterStyleSchema.optional(),
+  revisionPrompt: z.string().max(500).optional(),
+  selectedPosterDesign: designBriefSchema.optional(),
+  selectedPosterCopy: copyDataSchema.optional()
+}).superRefine((input, context) => {
+  const hasReference = input.referenceImageDataUrl !== undefined;
+  if (hasReference !== (input.referenceWidth !== undefined && input.referenceHeight !== undefined)
+    || (!hasReference && (input.referenceWidth !== undefined || input.referenceHeight !== undefined))) {
+    context.addIssue({ code: 'custom', path: ['referenceImageDataUrl'], message: '参考图和尺寸必须完整提供' });
+  }
 });
 
 export const beautifyRequestSchema = z.object({

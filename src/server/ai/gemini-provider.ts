@@ -284,7 +284,7 @@ async function readResponseBody(response: Response, signal: AbortSignal): Promis
   }
 }
 
-function normalizeResponse(value: unknown, image: ImageAsset, research: GenerationInput['research']): GenerateResponse {
+function normalizeResponse(value: unknown, image: ImageAsset, research: GenerationInput['research'], targetStyle?: GenerationInput['targetStyle']): GenerateResponse {
   if (typeof value !== 'object' || value === null) throw new Error(GENERATION_FORMAT_ERROR);
   const record = value as Record<string, unknown>;
   const analysisRecord = typeof record.analysis === 'object' && record.analysis !== null ? record.analysis as Record<string, unknown> : {};
@@ -313,8 +313,13 @@ function normalizeResponse(value: unknown, image: ImageAsset, research: Generati
     details: asStringArray(analysisRecord.details ?? analysisRecord.detail, ['保留主体轮廓和关键配件'])
   };
 
-  const posters = DYNAMIC_DIRECTIONS.map((direction, index) => {
-    const candidate = slots[index] ?? {};
+  const targetDirection = targetStyle ? directionForCandidate({ style: targetStyle }) : undefined;
+  const directions = targetDirection ? [targetDirection] : DYNAMIC_DIRECTIONS;
+  const posters = directions.map((direction) => {
+    const index = DYNAMIC_DIRECTIONS.indexOf(direction);
+    const candidate = targetDirection
+      ? recordValue(candidates.find((raw) => directionForCandidate(recordValue(raw)) === direction) ?? candidates[0])
+      : slots[index] ?? {};
     const candidateCopy = typeof candidate.copy === 'object' && candidate.copy !== null ? candidate.copy as Record<string, unknown> : candidate;
     const [fallbackTitle, fallbackDescription] = defaultCopies[index];
     const title = asCopyText(candidateCopy.title, fallbackTitle, MAX_COPY_TITLE_LENGTH);
@@ -376,12 +381,14 @@ export class GeminiProvider implements Provider {
 
     const research = cloneResearchSummary(input.research);
     const image = dataUrlParts(input.image.dataUrl);
+    const reference = input.referenceImage ? dataUrlParts(input.referenceImage.dataUrl) : undefined;
     const promptInput = { ...input, research };
     const url = `${geminiGenerateContentUrl(baseUrl, model)}?key=${encodeURIComponent(apiKey)}`;
     const body = {
       contents: [{ role: 'user', parts: [
         { text: buildGenerationPrompt(promptInput) },
-        { inline_data: { mime_type: image.mimeType, data: image.data } }
+        { inline_data: { mime_type: image.mimeType, data: image.data } },
+        ...(reference ? [{ inline_data: { mime_type: reference.mimeType, data: reference.data } }] : [])
       ] }],
       generationConfig: { responseMimeType: 'application/json' }
     };
@@ -411,7 +418,7 @@ export class GeminiProvider implements Provider {
         const envelope = JSON.parse(result.bodyText) as GeminiEnvelope;
         const text = envelope.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('').trim();
         if (!text) throw new Error(GENERATION_FORMAT_ERROR);
-        return normalizeResponse(parseJsonObject(text), input.image, research);
+        return normalizeResponse(parseJsonObject(text), input.image, research, input.targetStyle);
       } catch (error) {
         if (options.signal?.aborted) throw error;
         if (formatAttempt < MAX_FORMAT_RETRIES) continue;

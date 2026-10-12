@@ -100,22 +100,29 @@ export async function processTask(job: GenerationJob, runtime: WorkerRuntime, op
     const original = await runtime.storage.get(job.originalKey);
     if (!original) throw new Error('original image missing');
     const sourceDataUrl = encodeImageDataUrl(original.data, original.contentType);
-    await runtime.store.update(job.taskId, { phase: 'understanding', progress: 20 });
-    await runtime.store.update(job.taskId, { phase: 'researching', progress: 35 });
+    const reference = job.referenceKey ? await runtime.storage.get(job.referenceKey) : undefined;
+    if (job.referenceKey && !reference) throw new Error('reference image missing');
     const input: GeneratePostersInput = {
       image: { id: 'upload', dataUrl: sourceDataUrl, width: claimed.task.originalWidth ?? 3, height: claimed.task.originalHeight ?? 4, source: 'upload' },
       keywords: job.keywords,
       forbiddenWords: job.forbiddenWords,
-      creativeIdea: job.creativeIdea
+      creativeIdea: job.creativeIdea,
+      ...(reference ? { referenceImage: { id: 'reference', dataUrl: encodeImageDataUrl(reference.data, reference.contentType), width: job.referenceWidth ?? 3, height: job.referenceHeight ?? 4, source: 'upload' as const } } : {}),
+      ...(job.targetStyle ? { targetStyle: job.targetStyle } : {}),
+      ...(job.revisionPrompt ? { revisionPrompt: job.revisionPrompt } : {}),
+      ...(job.selectedPosterDesign ? { selectedPosterDesign: job.selectedPosterDesign } : {}),
+      ...(job.selectedPosterCopy ? { selectedPosterCopy: job.selectedPosterCopy } : {})
     };
-    await runtime.store.update(job.taskId, { phase: 'designing', progress: 55 });
-    await runtime.store.update(job.taskId, { phase: 'generating', progress: 75 });
     const env = { ...(runtime.env ?? process.env), ...(job.config.mode === 'mock' ? { AI_PROVIDER: 'mock' } : {}) };
     const generator = runtime.generate ?? generatePosters;
     const result = await withTimeout(
-      (signal) => generator(input, { signal, timeoutMs: DEFAULT_TASK_TIMEOUT_MS, dependencies: { env } }),
+      (signal) => generator(input, { signal, timeoutMs: DEFAULT_TASK_TIMEOUT_MS, dependencies: { env }, onPhase: async (phase) => {
+        const progress = { researching: 20, designing: 40, generating: 65, checking: 90 }[phase];
+        await runtime.store.update(job.taskId, { phase, progress });
+      } }),
       runtime.timeoutMs ?? DEFAULT_TASK_TIMEOUT_MS
     );
+    await runtime.store.update(job.taskId, { phase: 'checking', progress: 90 });
     const posters: TaskResult['posters'] = [];
     const warnings = [...(result.warnings ?? [])];
     for (const poster of result.posters) {
@@ -129,7 +136,6 @@ export async function processTask(job: GenerationJob, runtime: WorkerRuntime, op
       }
     }
     if (posters.length === 0) throw new Error('no valid generated image');
-    await runtime.store.update(job.taskId, { phase: 'checking', progress: 90 });
     const succeeded = await runtime.store.update(job.taskId, { status: 'succeeded', phase: 'completed', progress: 100, warnings, result: { analysis: cloneTaskValue(result.analysis), research: cloneTaskValue(result.research), posters, ...(warnings.length ? { warnings } : {}) } });
     if (!succeeded || succeeded.status !== 'succeeded') throw new Error('task result persistence failed');
     return { ack: true, reason: 'terminal' };

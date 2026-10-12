@@ -19,7 +19,8 @@ export const taskPosterMetadataSchema = z.object({
   background: posterDraftSchema.shape.background,
   layers: posterDraftSchema.shape.layers,
   design: posterDraftSchema.shape.design.unwrap(),
-  designNote: posterDraftSchema.shape.designNote
+  designNote: posterDraftSchema.shape.designNote,
+  finalPrompt: posterDraftSchema.shape.finalPrompt
 });
 export const taskResultSchema = z.object({
   analysis: generationResultSchema.shape.analysis,
