@@ -43,15 +43,21 @@ export function ImagePicker() {
 
   return (
     <div className="image-picker">
+      {!upload && <div className="upload-empty-art" aria-hidden="true">
+        <div className="upload-photo-stack"><img className="stack-left" src="/visuals/editorial.webp" alt="" /><img className="stack-right" src="/visuals/story.webp" alt="" /><img className="stack-front" src="/visuals/hero.webp" alt="" /><span className="stack-plus"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg></span></div>
+        <p>带上你的小伙伴</p><small>一张原图，开启三种可能。</small>
+      </div>}
       {upload && <img className="upload-preview" src={upload.dataUrl} alt="已上传的玩偶照片" />}
       <div className="picker-actions">
         <button className="primary-button" type="button" onClick={() => albumInput.current?.click()}>
+          <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="m5 17 5-6 4 4 3-3 2 3M8 7h.01" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
           选择照片
         </button>
         <button className="secondary-button" type="button" onClick={() => cameraInput.current?.click()}>
           拍照使用
         </button>
       </div>
+      <p className="photo-file-note">JPG、PNG、WebP · 最大 12MB</p>
       <StatusBanner message={error} />
       <label className="visually-hidden">
         从相册选择照片

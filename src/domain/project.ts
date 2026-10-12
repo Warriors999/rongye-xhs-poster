@@ -1,4 +1,4 @@
-export type WizardStep = 'upload' | 'generating' | 'choose' | 'copy' | 'edit' | 'exported';
+export type WizardStep = 'upload' | 'preparing' | 'review' | 'generating' | 'choose' | 'copy' | 'edit' | 'exported';
 export type BeautifyMode = 'original' | 'craft' | 'studio';
 export type PosterDirection = 'lifestyle' | 'story' | 'editorial';
 export type LegacyPosterStyle = 'cute' | 'daily' | 'series';
@@ -130,6 +130,7 @@ export interface GenerationInput {
   revisionPrompt?: string;
   selectedPosterDesign?: DesignBrief;
   selectedPosterCopy?: CopyData;
+  approvedPlan?: GenerationResult;
 }
 
 export interface GenerationResult {

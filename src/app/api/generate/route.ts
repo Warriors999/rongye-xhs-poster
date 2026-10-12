@@ -1,4 +1,6 @@
-import { generationRequestSchema } from '@/server/ai/contracts';
+import { approvedPlanSchema, generationRequestSchema } from '@/server/ai/contracts';
+import { generatePosters } from '@/server/generation/generate-posters';
+import { createEmptyDraft, type GenerationResult } from '@/domain/project';
 import { isAbortError, raceWithAbort } from '@/server/ai/call-options';
 import { submitGenerationTask } from '@/server/async/task-submission';
 
@@ -118,8 +120,17 @@ export async function POST(request: Request): Promise<Response> {
   if (!parsed.success) return errorResponse(400, '请求参数无效，请检查图片、关键词和禁止词');
 
   try {
-    const task = await submitGenerationTask({
-      image: { id: 'upload', dataUrl: parsed.data.imageDataUrl, width: parsed.data.width, height: parsed.data.height, source: 'upload' },
+    let approvedPlan: GenerationResult | undefined;
+    const approvedValue = values.get('approvedPlan');
+    if (approvedValue !== null) {
+      let value: unknown;
+      try { value=JSON.parse(String(approvedValue)); } catch { return errorResponse(400, '提示词或方案无效，请检查后重试'); }
+      const plan = approvedPlanSchema.safeParse(value);
+      if (!plan.success) return errorResponse(400, '提示词或方案无效，请检查后重试');
+      approvedPlan = { ...plan.data, posters: plan.data.posters.map((poster) => ({ ...createEmptyDraft(), ...poster, image: { id:'upload',dataUrl:parsed.data.imageDataUrl,width:parsed.data.width,height:parsed.data.height,source:'upload' } })) };
+    }
+    const input = {
+      image: { id: 'upload', dataUrl: parsed.data.imageDataUrl, width: parsed.data.width, height: parsed.data.height, source: 'upload' as const },
       keywords: parsed.data.keywords,
       forbiddenWords: parsed.data.forbiddenWords,
       creativeIdea: parsed.data.creativeIdea,
@@ -127,8 +138,12 @@ export async function POST(request: Request): Promise<Response> {
       ...(parsed.data.targetStyle ? { targetStyle: parsed.data.targetStyle } : {}),
       ...(parsed.data.revisionPrompt ? { revisionPrompt: parsed.data.revisionPrompt } : {}),
       ...(parsed.data.selectedPosterDesign ? { selectedPosterDesign: parsed.data.selectedPosterDesign } : {}),
-      ...(parsed.data.selectedPosterCopy ? { selectedPosterCopy: parsed.data.selectedPosterCopy } : {})
-    });
+      ...(parsed.data.selectedPosterCopy ? { selectedPosterCopy: parsed.data.selectedPosterCopy } : {}),
+      ...(approvedPlan ? { approvedPlan } : {})
+    };
+    if (new URL(request.url).pathname === '/api/design') return Response.json(await generatePosters(input, { signal:request.signal, designOnly:true }), {headers:{'cache-control':'no-store'}});
+    if (new URL(request.url).pathname === '/api/render' && !approvedPlan) return errorResponse(400, '请先确认设计提示词');
+    const task = await submitGenerationTask(input);
     return Response.json(task, { status: 202 });
   } catch (error) {
     if (isAbortError(error)) return errorResponse(504, '生成服务超时，请重试');

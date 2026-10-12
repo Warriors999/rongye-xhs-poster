@@ -12,6 +12,7 @@ export interface AIConfig {
     baseUrl?: string;
     apiKey?: string;
     model: string;
+    size: string;
   };
   quality: {
     protocol: AIProtocol;
@@ -54,7 +55,8 @@ export function resolveAIConfig(env: Env = process.env): AIConfig {
     image: {
       baseUrl: imageBaseUrl,
       apiKey: imageApiKey,
-      model: firstValue(env.AI_IMAGE_MODEL) ?? 'gpt-image-2'
+      model: firstValue(env.AI_IMAGE_MODEL) ?? 'gpt-image-2',
+      size: firstValue(env.AI_IMAGE_SIZE) ?? '1152x1536'
     },
     quality: {
       protocol: qualityProtocol,

@@ -464,6 +464,36 @@ describe('generatePosters use case', () => {
 
 
 describe('single poster revision and real phases', () => {
+  it('prepares prompts without creating or calling the image provider', async () => {
+    const getImageProvider = vi.fn();
+    const result = await generatePosters(input(), {designOnly:true,dependencies:dependencies({getImageProvider})});
+    expect(getImageProvider).not.toHaveBeenCalled();
+    expect(result.posters).toHaveLength(3);
+    expect(result.posters.every(poster=>poster.finalPrompt?.trim())).toBe(true);
+  });
+
+  it('renders confirmed prompts without invoking the text model again', async () => {
+    const plan = generatedResult();
+    plan.posters.forEach(poster=>{poster.finalPrompt='依据原图保留玩偶，清晰构图。'});
+    plan.posters[0].finalPrompt = '用户编辑：背景使用宝蓝色，标题置于右侧。';
+    const getProvider = vi.fn();
+    const beautify = vi.fn().mockImplementation(async ({image})=>image);
+    const result = await generatePosters({...input(),approvedPlan:plan},{dependencies:dependencies({getProvider,getImageProvider:()=>({beautify})})});
+    expect(getProvider).not.toHaveBeenCalled();
+    expect(beautify).toHaveBeenCalledTimes(3);
+    expect(result.posters[0].finalPrompt).toContain('用户编辑：背景使用宝蓝色');
+    expect(result.posters[0].finalPrompt).toBe(buildPosterPrompt(beautify.mock.calls[0][0].poster));
+  });
+  it('passes other sanitized concepts to each image request and records them in its actual prompt', async () => {
+    const source = generatedResult();
+    source.posters.forEach((poster, index) => { poster.design = { ...poster.design!, concept: ['折纸建筑', '深蓝剧场', '图形拼贴'][index], layout: ['左侧小主体', '右侧中主体', '下方大主体'][index] }; });
+    const beautify = vi.fn().mockImplementation(async ({ image }) => image);
+    const result = await generatePosters(input(), { dependencies: dependencies({ getProvider: () => ({ generate: async () => source }), getImageProvider: () => ({ beautify }) }) });
+    const first = beautify.mock.calls[0][0].poster;
+    expect(first.alternatives.map((other: { concept: string }) => other.concept)).toEqual(['深蓝剧场', '图形拼贴']);
+    expect(result.posters[0].finalPrompt).toBe(buildPosterPrompt(first));
+    expect(result.posters[0].finalPrompt).toContain('本组其他方案的设计摘要');
+  });
   it('renders only the requested slot and records the actual sanitized image prompt', async () => {
     const beautify = vi.fn().mockImplementation(async ({ image }) => ({ ...image, dataUrl: 'data:image/png;base64,AAAA', source: 'beautified' }));
     const phases: string[] = [];

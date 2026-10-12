@@ -125,7 +125,7 @@ describe('ChooseScreen', () => {
     expect(usePosterStore.getState().selectedDraft?.style).toBe('story');
 
     fireEvent.click(screen.getByRole('button', { name: '重新生成全部方案' }));
-    expect(usePosterStore.getState().step).toBe('generating');
+    expect(usePosterStore.getState().step).toBe('preparing');
     expect(usePosterStore.getState().generation).toBeNull();
   });
 

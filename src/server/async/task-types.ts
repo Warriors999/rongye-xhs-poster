@@ -20,6 +20,7 @@ export interface GenerationJob {
   revisionPrompt?: string;
   selectedPosterDesign?: DesignBrief;
   selectedPosterCopy?: PosterDraft['copy'];
+  approvedPlan?: GenerationResult;
   config: SafeGenerationConfig;
 }
 

@@ -5,12 +5,12 @@
 当前主流程是：
 
 ```text
-上传真实针织玩偶 + 创作想法
-→ 参考研究或服务端内置 fallback
-→ 动态设计三个方向（生活方式、故事叙事、编辑海报）
-→ 生成三张完整微海报
-→ 质量检查
-→ 直接下载单张或全部海报
+上传真实针织玩偶 + 创作想法 + 可选风格参考
+→ 文字模型理解原图，结合项目提示词规范设计三个独立方向
+→ 查看和编辑生图提示词，也可保留原稿
+→ 主动确认提交原图与提示词给图片模型
+→ 三张完整微海报（3:4）
+→ 下载、保存浏览器作品库、单张重做、可选发布文案
 ```
 
 生成结果已经包含背景、视觉元素、中文文案和排版，当前主流程不进入旧编辑器，下载的就是完整成品。
@@ -65,7 +65,8 @@ AI_VISION_PROTOCOL=google
 AI_VISION_BASE_URL=https://apinebula.ai
 AI_IMAGE_BASE_URL=https://apinebula.ai/v1
 AI_VISION_MODEL=gemini-3.1-flash-lite
-AI_IMAGE_MODEL=gpt-image-2
+AI_IMAGE_MODEL=gpt-image-2.5
+AI_IMAGE_SIZE=1152x1536
 AI_VISION_API_KEY=你的密钥
 AI_IMAGE_API_KEY=你的密钥
 REFERENCE_RESEARCH_URL=你的参考研究服务地址
@@ -140,7 +141,7 @@ exit 1
 - `AI_VISION_MODEL`：图片理解和文字设计模型，例如 `gemini-3.1-flash-lite`；
 - `AI_IMAGE_BASE_URL`：图片生成模型地址，例如 `https://apinebula.ai/v1`；
 - `AI_IMAGE_API_KEY`：图片生成模型的服务端 API key；
-- `AI_IMAGE_MODEL`：图片生成/美化模型，例如 `gpt-image-2`；
+- `AI_IMAGE_MODEL`：图片生成/美化模型，例如 `gpt-image-2.5`；
 - `AI_BASE_URL`：旧版 OpenAI-compatible Provider 的兼容地址；
 - `AI_API_KEY`：兼容旧配置；如果两个模型共用一个 key，可以使用它作为回退配置。
 - `REFERENCE_RESEARCH_URL`：可选的参考研究服务地址。服务端会发送 `POST` JSON：`{ query, limit: 3, platform: "pinterest" }`，查询只来自截断后的关键词和创作想法；服务返回的来源最多保留 3 条。
@@ -178,3 +179,9 @@ pnpm test:e2e
 E2E 覆盖 iPhone 13 和 375×812 手机视口。
 
 E2E 会显式使用 `AI_PROVIDER=mock` 并清空参考研究地址，因此不会访问外部研究或图片 API，也不会产生 API 费用。
+
+## 提示词草稿与作品历史
+
+待确认提示词草稿自动保存当前一份到浏览器IndexedDB，刷新后可恢复；确认前不会调用图片模型。成品作品库保存最近12项，包含原图、输入、结果、提示词和参考图，仅属于当前浏览器及域名，不跨设备，清理浏览器数据会丢失。Render Free服务端临时图片30分钟过期，休眠/重启也会丢失，但已经保存到浏览器的成品与草稿独立于服务端。
+
+UI设计与本地实测见 `升级说明.md` 和 `CHANGELOG.md`。本轮未接入自动AI视觉审核，返回图片需要用户确认主体与文字。

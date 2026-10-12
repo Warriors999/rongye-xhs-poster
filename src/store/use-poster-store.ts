@@ -68,6 +68,13 @@ export interface PosterStore {
   error: string | null;
   regenerationTarget: PosterDraft | null;
   revisionPrompt: string;
+  promptPlan: GenerationResult | null;
+  originalPrompts: string[];
+  completedPromptPlan: number;
+  startDesign: () => void;
+  setPromptPlan: (plan: GenerationResult) => void;
+  editPrompt: (index: number, prompt: string) => void;
+  submitPrompts: () => void;
   setUpload: (upload: ImageAsset | null) => void;
   setReferenceImage: (image: ImageAsset | null) => void;
   setRevisionPrompt: (prompt: string) => void;
@@ -112,11 +119,18 @@ const initialState = {
   exportResult: null,
   error: null,
   regenerationTarget: null,
-  revisionPrompt: ''
+  revisionPrompt: '',
+  promptPlan: null,
+  originalPrompts: [] as string[],
+  completedPromptPlan: 0
 };
 
 export const usePosterStore = create<PosterStore>((set) => ({
   ...initialState,
+  startDesign: () => set((state) => state.upload && (state.step === 'upload' || state.step === 'review' || state.step === 'choose') ? { step:'preparing',generation:null,promptPlan:null,originalPrompts:[],error:null,selectedDraft:null,copyResult:null,copyError:null,exportResult:null,regenerationTarget:null,revisionPrompt:'' } : state),
+  setPromptPlan: (plan) => set((state) => state.step === 'preparing' ? {promptPlan:cloneGeneration(plan),originalPrompts:plan.posters.map((poster)=>poster.finalPrompt ?? ''),step:'review',error:null} : state),
+  editPrompt: (index,prompt) => set((state) => state.promptPlan && state.step === 'review' ? {promptPlan:{...state.promptPlan,posters:state.promptPlan.posters.map((poster,i)=>i===index?{...poster,finalPrompt:prompt.slice(0,8000)}:poster)}} : state),
+  submitPrompts: () => set((state) => state.step === 'review' && state.promptPlan?.posters.every((poster)=>poster.finalPrompt?.trim()) ? {step:'generating',error:null,regenerationTarget:null,revisionPrompt:''} : state),
   setUpload: (upload) => set({ upload }),
   setReferenceImage: (referenceImage) => set({ referenceImage }),
   setRevisionPrompt: (revisionPrompt) => set({ revisionPrompt }),
@@ -136,12 +150,13 @@ export const usePosterStore = create<PosterStore>((set) => ({
         exportResult: null,
         regenerationTarget: null,
         revisionPrompt: '',
+        promptPlan: null,
         ...(state.step === 'choose' ? { generation: null } : {})
       };
     }),
   regenerateOne: (draft, feedback) => set((state) => {
     if (state.step !== 'choose' || !state.upload || !state.generation || !feedback.trim() || !state.generation.posters.some((poster) => poster.style === draft.style)) return state;
-    return { step: 'generating', regenerationTarget: cloneDraft(draft), revisionPrompt: feedback.trim(), error: null };
+    return { step: 'generating', regenerationTarget: cloneDraft(draft), revisionPrompt: feedback.trim(), error: null, promptPlan:null };
   }),
   restoreProject: (project) => set({
     ...initialState,
@@ -174,9 +189,10 @@ export const usePosterStore = create<PosterStore>((set) => ({
   continueEditing: () => set((state) => (state.step === 'exported' ? { step: 'edit' } : state)),
   failGeneration: (message) =>
     set((state) =>
-      state.step === 'generating'
+      state.step === 'preparing' ? {step:'upload',error:message} : state.step === 'generating'
         ? state.regenerationTarget && state.generation
           ? { step: 'choose', error: message, regenerationTarget: null }
+          : state.promptPlan ? {step:'review',error:message}
           : { step: 'upload', error: message, generation: null, selectedDraft: null, copyResult: null, copyError: null, exportResult: null, regenerationTarget: null }
         : state
     ),
@@ -193,7 +209,7 @@ export const usePosterStore = create<PosterStore>((set) => ({
           step: 'choose', error: null, regenerationTarget: null, revisionPrompt: ''
         };
       }
-      return { generation: cloneGeneration(generation), step: 'choose', error: null };
+      return { generation: cloneGeneration(generation), step: 'choose', error: null, promptPlan:null,originalPrompts:[],selectedDraft:null,copyResult:null,copyError:null,exportResult:null,completedPromptPlan:state.promptPlan?state.completedPromptPlan+1:state.completedPromptPlan };
     }),
   selectDraft: (selectedDraft) =>
     set((state) =>
@@ -209,8 +225,10 @@ export const usePosterStore = create<PosterStore>((set) => ({
     ),
   goBack: () =>
     set((state) => {
+      if (state.step === 'review' || state.step === 'preparing') return {step:'upload',error:null};
       if (state.step === 'generating') {
         if (state.regenerationTarget && state.generation) return { step: 'choose', regenerationTarget: null, error: null };
+        if (state.promptPlan) return {step:'review',error:null};
         return { step: 'upload', generation: null, selectedDraft: null, copyResult: null, copyError: null, exportResult: null };
       }
       if (state.step === 'copy') return { step: 'choose', copyResult: null, copyError: null };

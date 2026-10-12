@@ -23,21 +23,28 @@ function copyBytes(data: Uint8Array): Uint8Array {
 }
 
 export class InMemoryObjectStorage implements ObjectStorage {
-  private readonly objects = new Map<string, StoredObject>();
+  private readonly objects = new Map<string, StoredObject & { expiresAt: number }>();
+  private readonly now: () => number;
+  private readonly ttlMs: number;
+  constructor(options: { now?: () => number; ttlMs?: number } = {}) { this.now=options.now??Date.now;this.ttlMs=options.ttlMs??30*60*1000; }
+  private expire() { for(const [key,value]of this.objects)if(value.expiresAt<=this.now())this.objects.delete(key); }
 
   async put(key: string, data: Uint8Array, contentType: string): Promise<void> {
     assertStorageKey(key);
-    this.objects.set(key, { data: copyBytes(data), contentType: contentType || 'application/octet-stream' });
+    this.expire();
+    this.objects.set(key, { data: copyBytes(data), contentType: contentType || 'application/octet-stream',expiresAt:this.now()+this.ttlMs });
   }
 
   async get(key: string): Promise<StoredObject | null> {
     assertStorageKey(key);
+    this.expire();
     const object = this.objects.get(key);
     return object ? { data: copyBytes(object.data), contentType: object.contentType } : null;
   }
 
   async exists(key: string): Promise<boolean> {
     assertStorageKey(key);
+    this.expire();
     return this.objects.has(key);
   }
 

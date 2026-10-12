@@ -25,7 +25,8 @@ describe('AI configuration', () => {
     expect(config.image).toEqual({
       baseUrl: 'https://image.example/v1',
       apiKey: 'image-key',
-      model: 'image-model'
+      model: 'image-model',
+      size: '1152x1536'
     });
   });
 

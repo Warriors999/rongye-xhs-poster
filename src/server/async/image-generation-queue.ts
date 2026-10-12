@@ -1,5 +1,5 @@
 import Redis from 'ioredis';
-import { copyDataSchema, designBriefSchema, posterStyleSchema } from '@/server/ai/contracts';
+import { copyDataSchema, designBriefSchema, generationResultSchema, posterStyleSchema } from '@/server/ai/contracts';
 import { randomUUID } from 'node:crypto';
 import { cloneTaskValue, type GenerationJob, type GenerationQueue, type QueueMessage } from './task-types';
 
@@ -19,6 +19,8 @@ function cloneJob(job: GenerationJob): GenerationJob {
   const style = posterStyleSchema.safeParse(job.targetStyle);
   const design = designBriefSchema.safeParse(job.selectedPosterDesign);
   const copy = copyDataSchema.safeParse(job.selectedPosterCopy);
+  const approved = job.approvedPlan ? generationResultSchema.safeParse(job.approvedPlan) : undefined;
+  if (approved && !approved.success) throw new Error('确认的方案格式无效');
   const hasReference = typeof job.referenceKey === 'string'
     && job.referenceKey === `tasks/${job.taskId}/reference`
     && [job.referenceWidth, job.referenceHeight].every((edge) => typeof edge === 'number' && Number.isInteger(edge) && edge > 0 && edge <= 1600);
@@ -33,7 +35,8 @@ function cloneJob(job: GenerationJob): GenerationJob {
     ...(typeof job.revisionPrompt === 'string' ? { revisionPrompt: job.revisionPrompt.slice(0, 500) } : {}),
     ...(design.success ? { selectedPosterDesign: design.data } : {}),
     ...(copy.success ? { selectedPosterCopy: copy.data } : {}),
-    config: { mode: job.config.mode }
+    config: { mode: job.config.mode },
+    ...(approved?.success ? { approvedPlan: approved.data } : {})
   });
 }
 

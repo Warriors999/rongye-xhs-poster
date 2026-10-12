@@ -14,6 +14,16 @@ const image = {
 };
 
 describe('ImageProvider', () => {
+  it('requests a 3:4 poster size and returns dimensions matching the delivered PNG', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data:[{b64_json:MINIMAL_PNG_BASE64}] }), {status:200}));
+    const provider = new ImageProvider({env:{AI_IMAGE_BASE_URL:'https://example.test/v1',AI_IMAGE_API_KEY:'key',AI_IMAGE_MODEL:'gpt-image-2.5'},fetchImpl});
+    const result = await provider.beautify({image,mode:'studio',poster:{style:'editorial',copy:{title:'纸间','description':'柔软陪伴。',tags:['#手作']},design:designPresets.editorial}});
+    expect((fetchImpl.mock.calls[0][1].body as FormData).get('size')).toBe('1152x1536');
+    expect(result.width / result.height).toBe(3/4);
+    const png=Buffer.from(result.dataUrl.split(',')[1],'base64');
+    expect(png.readUInt32BE(16)).toBe(result.width);
+    expect(png.readUInt32BE(20)).toBe(result.height);
+  });
   afterEach(() => {
     vi.unstubAllEnvs();
   });
@@ -35,8 +45,8 @@ describe('ImageProvider', () => {
 
     expect(result).toMatchObject({
       dataUrl: `data:image/png;base64,${MINIMAL_PNG_BASE64}`,
-      width: 1024,
-      height: 1536,
+      width: 1,
+      height: 1,
       source: 'beautified',
       mode: 'studio'
     });
@@ -120,7 +130,7 @@ describe('ImageProvider', () => {
       image,
       mode: 'studio',
       poster: { style: 'cute', copy: { title: '旧调用', description: '保持兼容。', tags: ['#手作'] }, design: designPresets.cute }
-    })).resolves.toMatchObject({ width: 1024, height: 1536 });
+    })).resolves.toMatchObject({ width: 1152, height: 1536 });
   });
 
   it('retries one transient image request', async () => {

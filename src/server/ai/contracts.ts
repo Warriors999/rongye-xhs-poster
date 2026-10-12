@@ -227,6 +227,14 @@ export const generationResultSchema = z.object({
 
 export const generateResponseSchema = generationResultSchema;
 
+export const approvedPlanSchema = z.object({
+  analysis: generationResultSchema.shape.analysis,
+  research: researchSummarySchema,
+  posters: z.array(posterDraftSchema.omit({ image: true, layers: true }).extend({ finalPrompt: z.string().trim().min(1).max(8000) })).min(1).max(3)
+}).superRefine((value, context) => {
+  if (new Set(value.posters.map((poster) => poster.style)).size !== value.posters.length) context.addIssue({code:'custom',message:'方案不能重复'});
+});
+
 export type GenerateRequest = z.infer<typeof generationRequestSchema>;
 export type BeautifyRequest = z.infer<typeof beautifyRequestSchema>;
 export type CopyGenerationRequest = z.infer<typeof copyGenerationRequestSchema>;

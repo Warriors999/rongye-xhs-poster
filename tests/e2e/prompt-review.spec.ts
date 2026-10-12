@@ -1,0 +1,36 @@
+import { expect, test } from '@playwright/test';
+
+test('reviews and persists prompts before explicitly submitting image generation',async({page},info)=>{
+  let renders=0;
+  page.on('request',request=>{if(request.url().endsWith('/api/render'))renders++});
+  await page.goto('/');
+  await page.getByRole('button',{name:'进入绒页',exact:true}).click();
+  await page.getByLabel('从相册选择照片').setInputFiles('public/visuals/hero.webp');
+  await page.getByRole('button',{name:'设计 3 套提示词',exact:true}).click();
+  await page.getByRole('heading',{name:'先看看设计提示词',exact:true}).waitFor();
+  expect(renders).toBe(0);
+  const textarea=page.getByRole('textbox',{name:'方案 A 的提示词',exact:true});
+  const original=await textarea.inputValue();
+  await textarea.fill('保留原图玩偶。背景为宝蓝，标题在右侧，短句清晰。');
+  await page.getByRole('button',{name:'恢复模型原稿',exact:true}).click();
+  await expect(textarea).toHaveValue(original);
+  await textarea.fill('保留原图玩偶。背景为宝蓝，标题在右侧，短句清晰。');
+  await textarea.blur();
+  await page.getByText('草稿已保存在此浏览器',{exact:true}).waitFor();
+  await expect.poll(async()=>await page.evaluate(()=>new Promise<string>((resolve,reject)=>{const req=indexedDB.open('rongye-prompt-draft',1);req.onsuccess=()=>{const db=req.result;const read=db.transaction('draft').objectStore('draft').get('current');read.onsuccess=()=>{resolve(read.result?.promptPlan.posters[0].finalPrompt||'');db.close()};read.onerror=reject}}))).toBe('保留原图玩偶。背景为宝蓝，标题在右侧，短句清晰。');
+  await page.reload();
+  await page.getByRole('button',{name:'进入绒页',exact:true}).click();
+  await page.getByRole('button',{name:'继续编辑提示词',exact:true}).click();
+  await expect(page.getByRole('textbox',{name:'方案 A 的提示词',exact:true})).toHaveValue('保留原图玩偶。背景为宝蓝，标题在右侧，短句清晰。');
+  await page.screenshot({path:`test-results/${info.project.name}-prompt-review.png`});
+  const submit=page.waitForResponse(r=>r.url().endsWith('/api/render')&&r.request().method()==='POST');
+  await page.getByRole('button',{name:'按当前提示词生成 3 张',exact:true}).click();
+  const response=await submit;expect(response.status()).toBe(202);
+  const {taskId}=await response.json();
+  await page.getByRole('heading',{name:'找到你喜欢的那一张',exact:true}).waitFor();
+  const status=await page.request.get(`/api/tasks/${taskId}`);const value=await status.json();
+  expect(value.result.posters[0].finalPrompt).toContain('背景为宝蓝');
+  expect(value.result.posters[0].finalPrompt).toContain('固定保护要求');
+  expect(renders).toBe(1);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});

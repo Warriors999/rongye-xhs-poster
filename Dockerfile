@@ -36,6 +36,7 @@ RUN groupadd --system --gid 1001 nodejs \
 
 COPY --from=production-deps --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=nextjs:nodejs /app/pnpm-lock.yaml ./pnpm-lock.yaml
 # Worker 通过 tsx 直接启动 TypeScript 入口；保留源代码和路径别名配置，确保独立 Worker 镜像可启动。

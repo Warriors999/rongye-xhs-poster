@@ -83,6 +83,28 @@ describe('buildGenerationPrompt', () => {
 });
 
 describe('resolveDesignBrief', () => {
+  it('uses a complete safe candidate without mixing generic fallback aesthetics into it', () => {
+    const brief = resolveDesignBrief('editorial', { concept:'几何纸艺拼贴', layout:'主体靠左占画面 30%，右侧大标题', scene:'钴蓝与亮黄纸艺空间', palette:['钴蓝','亮黄'], elements:['剪纸圆环'], typography:'右侧大字，黑色短标题', hierarchy:'右侧标题与左侧主体相互平衡', mood:'明亮醒目' }, research);
+    expect(brief.layout).toBe('主体靠左占画面 30%，右侧大标题');
+    expect(brief.palette).toEqual(['钴蓝','亮黄']);
+    expect(brief.elements).toEqual(['剪纸圆环']);
+    expect(brief.typography).toBe('右侧大字，黑色短标题');
+  });
+  it('keeps a repeatedly normalized brief stable and within transport limits', () => {
+    const first = resolveDesignBrief('story', {
+      label: '纸艺森林', concept: '层叠剪纸构成一个小舞台', layout: '主体靠左，右侧留白',
+      scene: '深蓝纸艺森林', typography: '标题位于右上角', hierarchy: '主视觉优先', mood: '鲜明而轻盈'
+    }, research);
+    let current = first;
+    for (let i = 0; i < 4; i += 1) current = resolveDesignBrief('story', current, research);
+    expect(current).toEqual(first);
+    expect(current.concept.length).toBeLessThanOrEqual(240);
+    expect(current.layout.length).toBeLessThanOrEqual(280);
+    expect(current.scene.length).toBeLessThanOrEqual(280);
+    expect(current.typography.length).toBeLessThanOrEqual(240);
+    expect(current.hierarchy.length).toBeLessThanOrEqual(240);
+    expect(current.mood.length).toBeLessThanOrEqual(160);
+  });
   it('merges a dynamic direction, research learning points and safe model values', () => {
     const brief = resolveDesignBrief('lifestyle', {
       concept: '把玩偶放进窗边的陪伴时刻',
@@ -101,7 +123,7 @@ describe('resolveDesignBrief', () => {
     expect(brief.elements).toContain('柔软布料');
     expect(brief.elements).not.toContain('价格标签');
     expect(brief.palette).toContain('低饱和珊瑚');
-    expect(brief.layout).toContain(research.composition);
+    expect(brief.layout).toBe('用自然视线连接主体和留白。');
     expect(brief.typography).toContain(research.typography);
     expect(brief.negative.join(' ')).toContain('不得改变上传玩偶的身份');
     expect(brief.negative.join(' ')).toContain('不得生成价格、日期、名称、编号、品牌、规格或伪文字');

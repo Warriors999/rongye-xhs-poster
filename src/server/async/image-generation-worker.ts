@@ -107,6 +107,7 @@ export async function processTask(job: GenerationJob, runtime: WorkerRuntime, op
       keywords: job.keywords,
       forbiddenWords: job.forbiddenWords,
       creativeIdea: job.creativeIdea,
+      ...(job.approvedPlan ? { approvedPlan: job.approvedPlan } : {}),
       ...(reference ? { referenceImage: { id: 'reference', dataUrl: encodeImageDataUrl(reference.data, reference.contentType), width: job.referenceWidth ?? 3, height: job.referenceHeight ?? 4, source: 'upload' as const } } : {}),
       ...(job.targetStyle ? { targetStyle: job.targetStyle } : {}),
       ...(job.revisionPrompt ? { revisionPrompt: job.revisionPrompt } : {}),

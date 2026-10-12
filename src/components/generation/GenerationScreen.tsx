@@ -127,6 +127,7 @@ export function GenerationScreen() {
   const referenceImage = usePosterStore((state) => state.referenceImage);
   const regenerationTarget = usePosterStore((state) => state.regenerationTarget);
   const revisionPrompt = usePosterStore((state) => state.revisionPrompt);
+  const promptPlan = usePosterStore((state) => state.promptPlan);
   const error = usePosterStore((state) => state.error);
   const setGeneration = usePosterStore((state) => state.setGeneration);
   const failGeneration = usePosterStore((state) => state.failGeneration);
@@ -150,6 +151,7 @@ export function GenerationScreen() {
     if (input) {
       const form = new FormData();
       appendGenerationInput(form, input.upload, input.keywords, input.forbiddenWords, input.creativeIdea, input.referenceImage, input.target, input.revisionPrompt);
+      if(promptPlan)form.set('approvedPlan',JSON.stringify({...promptPlan,posters:promptPlan.posters.map(({image,layers,...poster})=>poster)}));
 
       const pollTask = async (taskId: string): Promise<void> => {
         if (!active || controller.signal.aborted) return;
@@ -168,7 +170,7 @@ export function GenerationScreen() {
         }, 2_000);
       };
 
-      void fetch(input.target ? '/api/regenerate' : '/api/generate', {
+      void fetch(input.target ? '/api/regenerate' : promptPlan ? '/api/render' : '/api/generate', {
         method: 'POST',
         body: form,
         signal: controller.signal
@@ -218,7 +220,7 @@ export function GenerationScreen() {
   return (
     <main className="app-shell generation-shell">
       <section className="generation-card" aria-labelledby="generation-title">
-        <p className="kicker">{regenerationTarget ? '正在调整这一张' : 'AI 正在准备你的海报'}</p>
+        <p className="kicker">{regenerationTarget ? '正在调整这一张' : promptPlan ? '按你确认的提示词生图' : 'AI 正在准备你的海报'}</p>
         <div className="generation-upload-wrap">
           <img className="generation-upload-preview" src={upload.dataUrl} alt="已上传的玩偶照片" />
         </div>

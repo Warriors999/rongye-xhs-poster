@@ -22,6 +22,7 @@ export async function submitGenerationTask(input: TaskSubmissionInput, dependenc
     ? { store: dependencies.store, queue: dependencies.queue, storage: dependencies.storage, env }
     : getAsyncRuntime(env);
   const decoded = decodeImageDataUrl(input.image.dataUrl);
+  await runtime.store.deleteExpired();
   const reference = input.referenceImage ? decodeImageDataUrl(input.referenceImage.dataUrl) : undefined;
   const task = await runtime.store.create({
     originalKey: undefined,
@@ -48,7 +49,8 @@ export async function submitGenerationTask(input: TaskSubmissionInput, dependenc
       ...(input.revisionPrompt ? { revisionPrompt: input.revisionPrompt } : {}),
       ...(input.selectedPosterDesign ? { selectedPosterDesign: input.selectedPosterDesign } : {}),
       ...(input.selectedPosterCopy ? { selectedPosterCopy: input.selectedPosterCopy } : {}),
-      config: { mode: env.AI_PROVIDER?.trim().toLowerCase() && env.AI_PROVIDER.trim().toLowerCase() !== 'mock' ? 'configured' as const : 'mock' as const }
+      config: { mode: env.AI_PROVIDER?.trim().toLowerCase() && env.AI_PROVIDER.trim().toLowerCase() !== 'mock' ? 'configured' as const : 'mock' as const },
+      ...(input.approvedPlan ? { approvedPlan: {...input.approvedPlan,posters:input.approvedPlan.posters.map(poster=>({...poster,image:{...poster.image,dataUrl:'data:image/png;base64,AA=='}}))} } : {})
     };
     await runtime.queue.enqueue(job);
     const workerRuntime: WorkerRuntime = { ...runtime, generate: generatePosters };

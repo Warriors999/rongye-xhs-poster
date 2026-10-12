@@ -52,6 +52,7 @@ export interface GeneratePostersOptions {
   timeoutMs?: number;
   dependencies?: GeneratePostersDependencies;
   onPhase?: (phase: GenerationPhase) => void | Promise<void>;
+  designOnly?: boolean;
 }
 
 export class GenerationAbortedError extends Error {
@@ -310,14 +311,16 @@ function throwIfOperationAborted(signal: AbortSignal): void {
   }
 }
 
-async function beautifyOnce(imageProvider: ImageBeautifier, poster: PosterDraft, sourceImage: ImageAsset, options: AICallOptions, qualityIssues?: string[]): Promise<PosterDraft> {
+async function beautifyOnce(imageProvider: ImageBeautifier, poster: PosterDraft, sourceImage: ImageAsset, options: AICallOptions, qualityIssues?: string[], alternatives?: DesignBrief[]): Promise<PosterDraft> {
   throwIfOperationAborted(options.signal!);
   const posterInput = {
     style: poster.style,
     copy: poster.copy,
     design: poster.design ?? resolveDesignBrief(poster.style, {}),
     designNote: poster.designNote,
-    qualityIssues
+    qualityIssues,
+    alternatives,
+    promptOverride: poster.finalPrompt
   };
   const finalPrompt = buildPosterPrompt(posterInput);
   const image = await withDeadline(() => imageProvider.beautify({ image: sourceImage, mode: visualModes[poster.style], poster: posterInput }, options), options.signal!);
@@ -325,15 +328,15 @@ async function beautifyOnce(imageProvider: ImageBeautifier, poster: PosterDraft,
   return { ...poster, image, finalPrompt };
 }
 
-async function beautifyWithBusinessRetry(imageProvider: ImageBeautifier, poster: PosterDraft, sourceImage: ImageAsset, signal: AbortSignal, qualityIssues?: string[], retryCount = MAX_BUSINESS_RETRIES): Promise<PosterDraft> {
+async function beautifyWithBusinessRetry(imageProvider: ImageBeautifier, poster: PosterDraft, sourceImage: ImageAsset, signal: AbortSignal, qualityIssues?: string[], retryCount = MAX_BUSINESS_RETRIES, alternatives?: DesignBrief[]): Promise<PosterDraft> {
   const budget = createRetryBudget(retryCount);
   const callOptions: AICallOptions = { signal, retryMode: 'business', retryBudget: budget };
   try {
-    return await beautifyOnce(imageProvider, poster, sourceImage, callOptions, qualityIssues);
+    return await beautifyOnce(imageProvider, poster, sourceImage, callOptions, qualityIssues, alternatives);
   } catch (error) {
     if (signal.aborted) throw error;
     if (!isRetryableImageError(error) || !consumeRetryBudget(budget)) throw error;
-    return beautifyOnce(imageProvider, poster, sourceImage, callOptions, qualityIssues);
+    return beautifyOnce(imageProvider, poster, sourceImage, callOptions, qualityIssues, alternatives);
   }
 }
 
@@ -351,12 +354,12 @@ export async function generatePosters(input: GeneratePostersInput, options: Gene
   try {
     throwIfOperationAborted(signal);
     await options.onPhase?.('researching');
-    let research = safeResearch(defaultResearchSummary, security);
-    try {
+    let research = safeResearch(input.approvedPlan?.research ?? defaultResearchSummary, security);
+    try { if (!input.approvedPlan) {
       research = safeResearch(await withDeadline(
         () => createResearcher(providerDependencies).research({ keywords: input.keywords, creativeIdea: input.creativeIdea }, callOptions),
         signal
-      ), security);
+      ), security); }
     } catch (error) {
       if (signal.aborted) throw error;
     }
@@ -364,8 +367,17 @@ export async function generatePosters(input: GeneratePostersInput, options: Gene
 
     await options.onPhase?.('designing');
     const providerInput: GenerationInput = { ...input, research };
-    const result = await withDeadline(() => createProvider(providerDependencies).generate(providerInput, callOptions), signal);
+    const result = input.approvedPlan ?? await withDeadline(() => createProvider(providerDependencies).generate(providerInput, callOptions), signal);
     throwIfOperationAborted(signal);
+    const candidates = input.targetStyle
+      ? [result.posters.find((poster) => directionForStyle(poster.style) === directionForStyle(input.targetStyle!)) ?? result.posters[0]].filter(Boolean).map((poster) => ({ ...poster, style: directionForStyle(input.targetStyle!) }))
+      : result.posters;
+    const preparedPosters = candidates.map((poster) => safePoster(security, input.targetStyle && input.selectedPosterCopy ? { ...poster, copy: input.selectedPosterCopy } : poster, input.image, research));
+    if (input.approvedPlan && preparedPosters.some((poster)=>!poster.finalPrompt)) throw new Error('提示词或方案无效，请检查后重试');
+    if (options.designOnly) return {
+      analysis: safeAnalysis(security, result.analysis), research,
+      posters: preparedPosters.map((poster, index) => ({ ...poster, finalPrompt: buildPosterPrompt({ style: poster.style, copy: poster.copy, design: poster.design!, designNote: poster.designNote, alternatives: preparedPosters.filter((_, other) => other !== index).map((other) => other.design!) }) }))
+    };
     let imageProvider: ImageBeautifier;
     try {
       imageProvider = createImageProvider(providerDependencies);
@@ -374,14 +386,10 @@ export async function generatePosters(input: GeneratePostersInput, options: Gene
       throw new ImageGenerationError();
     }
 
-    const candidates = input.targetStyle
-      ? [result.posters.find((poster) => directionForStyle(poster.style) === directionForStyle(input.targetStyle!)) ?? result.posters[0]].filter(Boolean).map((poster) => ({ ...poster, style: directionForStyle(input.targetStyle!) }))
-      : result.posters;
-    const preparedPosters = candidates.map((poster) => safePoster(security, input.targetStyle && input.selectedPosterCopy ? { ...poster, copy: input.selectedPosterCopy } : poster, input.image, research));
     await options.onPhase?.('generating');
     const warnings: string[] = [];
     const generated = await withDeadline(
-      () => Promise.allSettled(preparedPosters.map((poster) => beautifyWithBusinessRetry(imageProvider, poster, input.image, signal))),
+      () => Promise.allSettled(preparedPosters.map((poster, index) => beautifyWithBusinessRetry(imageProvider, poster, input.image, signal, undefined, MAX_BUSINESS_RETRIES, preparedPosters.filter((_, other) => other !== index).map((item) => item.design!)))),
       signal
     );
     throwIfOperationAborted(signal);

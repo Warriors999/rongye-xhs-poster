@@ -56,7 +56,7 @@ export function ChooseScreen() {
   const selectDraft = usePosterStore((state) => state.selectDraft);
   const setExportResult = usePosterStore((state) => state.setExportResult);
   const regenerateOne = usePosterStore((state) => state.regenerateOne);
-  const startGeneration = usePosterStore((state) => state.startGeneration);
+  const startGeneration = usePosterStore((state) => state.startDesign);
   const openCopyComposer = usePosterStore((state) => state.openCopyComposer);
   const goBack = usePosterStore((state) => state.goBack);
   const [savingKey, setSavingKey] = useState<string | null>(null);

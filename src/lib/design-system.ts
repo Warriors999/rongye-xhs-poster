@@ -125,9 +125,10 @@ function safeCandidateNegative(value: unknown): string[] {
   return safeList(value, [], 6, 100).filter((item) => !/允许|可以|忽略|改变|替换|重绘|增加|添加/.test(item));
 }
 
-function mergeCandidateText(base: string, value: unknown): string {
-  const candidate = safeText(value, '');
-  return candidate ? `${candidate} ${base}` : base;
+function mergeCandidateText(base: string, value: unknown, maxLength: number): string {
+  const candidate = safeText(value, '', maxLength);
+  const content = candidate.split(base).join('').trim();
+  return content || Array.from(base).slice(0, maxLength).join('');
 }
 
 /**
@@ -145,14 +146,14 @@ export function resolveDesignBrief(style: PosterStyle, candidate: unknown = {}, 
   return {
     ...base,
     label: safeText(source.label ?? source.name, base.label ?? '动态创意方案', 60),
-    concept: mergeCandidateText(base.concept, source.concept),
-    layout: mergeCandidateText(base.layout, source.layout),
-    scene: mergeCandidateText(base.scene, source.scene),
-    elements: unique([...base.elements, ...candidateElements]).slice(0, 6),
-    palette: unique([...candidatePalette, ...base.palette]).slice(0, 5),
-    typography: mergeCandidateText(base.typography, source.typography),
-    hierarchy: mergeCandidateText(base.hierarchy, source.hierarchy),
-    mood: mergeCandidateText(base.mood, source.mood),
+    concept: mergeCandidateText(base.concept, source.concept, 240),
+    layout: mergeCandidateText(base.layout, source.layout, 280),
+    scene: mergeCandidateText(base.scene, source.scene, 280),
+    elements: candidateElements.length ? unique(candidateElements) : base.elements,
+    palette: candidatePalette.length ? unique(candidatePalette) : base.palette,
+    typography: mergeCandidateText(base.typography, source.typography, 240),
+    hierarchy: mergeCandidateText(base.hierarchy, source.hierarchy, 240),
+    mood: mergeCandidateText(base.mood, source.mood, 160),
     negative: unique([...base.negative, ...candidateNegative]).slice(0, 10)
   };
 }
