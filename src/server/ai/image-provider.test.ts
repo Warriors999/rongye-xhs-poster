@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildPosterPrompt, ImageProvider, IMAGE_FORMAT_ERROR, IMAGE_PROVIDER_UNAVAILABLE_ERROR } from './image-provider';
 import { MockImageProvider } from './mock-image-provider';
 import { designPresets } from '@/lib/design-system';
+import sharp from 'sharp';
 
 const MINIMAL_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
@@ -92,6 +93,35 @@ describe('ImageProvider', () => {
       fetchImpl: vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [] }), { status: 200 }))
     });
     await expect(malformed.beautify({ image, mode: 'craft' })).rejects.toThrow(IMAGE_FORMAT_ERROR);
+  });
+
+  it('logs only a safe stage and status when a successful upstream response cannot be parsed', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const provider = new ImageProvider({
+      env: { AI_IMAGE_BASE_URL: 'https://example.test/v1', AI_IMAGE_API_KEY: 'secret' },
+      fetchImpl: vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [], secret: 'do-not-log' }), { status: 200 }))
+    });
+
+    try {
+      await expect(provider.beautify({ image, mode: 'craft' })).rejects.toThrow(IMAGE_FORMAT_ERROR);
+      expect(log).toHaveBeenCalledWith('[image-delivery] stage=payload-parse status=200 code=invalid-image');
+      expect(JSON.stringify(log.mock.calls)).not.toContain('do-not-log');
+    } finally { log.mockRestore(); }
+  });
+
+  it('distinguishes PNG normalization failure from response parsing without logging the image', async () => {
+    const encoded = (await sharp({ create: { width: 1601, height: 1, channels: 4, background: '#ffffff' } }).png().toBuffer()).toString('base64');
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const provider = new ImageProvider({
+      env: { AI_IMAGE_BASE_URL: 'https://example.test/v1', AI_IMAGE_API_KEY: 'secret' },
+      fetchImpl: vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [{ b64_json: encoded }] }), { status: 200 }))
+    });
+
+    try {
+      await expect(provider.beautify({ image, mode: 'craft', poster: { style: 'lifestyle', copy: { title: '标题', description: '描述', tags: [] }, design: designPresets.lifestyle } })).rejects.toThrow(IMAGE_FORMAT_ERROR);
+      expect(log).toHaveBeenCalledWith('[image-delivery] stage=image-normalize status=200 code=invalid-image');
+      expect(JSON.stringify(log.mock.calls)).not.toContain(encoded);
+    } finally { log.mockRestore(); }
   });
 
   it('sends the structured design brief and exact Chinese copy for a complete micro-poster', async () => {

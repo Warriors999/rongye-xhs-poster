@@ -38,8 +38,8 @@ export function LaunchScreen({ onEnter }: LaunchScreenProps) {
 
         <div className="launch-copy">
           <BrandMark className="launch-name-mark" />
-          <h1 id="launch-title">把每只玩偶，做成一张好看的图。</h1>
-          <p>给手作创作者的手机端小红书微海报工具</p>
+          <h1 id="launch-title">每一只用心织出的玩偶，都值得被看见。</h1>
+          <p>上传照片，做成适合分享的小红书海报。</p>
         </div>
 
         <button className="launch-enter" type="button" onClick={onEnter}>

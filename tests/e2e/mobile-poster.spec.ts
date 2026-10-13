@@ -7,7 +7,7 @@ const onePixelPng = Buffer.from(
 
 test('completes the mobile poster flow with the mock provider', async ({ page }, testInfo) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: '把每只玩偶，做成一张好看的图。' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '每一只用心织出的玩偶，都值得被看见。' })).toBeVisible();
   await page.screenshot({ path: `test-results/${testInfo.project.name}-home.png`, fullPage: true });
   await page.screenshot({ path: `test-results/${testInfo.project.name}-home-viewport.png` });
   await page.getByRole('button', { name: '进入绒页' }).click();
@@ -67,10 +67,19 @@ test('completes the mobile poster flow with the mock provider', async ({ page },
   const before = await page.getByRole('img',{name:'AI 生成的完整微海报',exact:true}).evaluateAll(xs=>xs.map(x=>x.getAttribute('src')));
   await page.getByRole('button',{name:'调整这张',exact:true}).nth(1).click();
   await page.getByLabel('想怎么调整这张？',{exact:true}).fill('背景改成深蓝，标题大一点');
+  const redoResponse = page.waitForResponse((response) => response.url().endsWith('/api/regenerate') && response.request().method() === 'POST');
   await page.getByRole('button',{name:'只重做这张',exact:true}).click();
+  const redo = await redoResponse;
+  expect(redo.status()).toBe(202);
+  const { taskId } = await redo.json();
   await expect(page.getByRole('heading',{name:'找到你喜欢的那一张'})).toBeVisible();
   const after = await page.getByRole('img',{name:'AI 生成的完整微海报',exact:true}).evaluateAll(xs=>xs.map(x=>x.getAttribute('src')));
-  expect(after[0]).toBe(before[0]); expect(after[1]).not.toBe(before[1]); expect(after[2]).toBe(before[2]);
+  expect(after[0] === before[0]).toBe(true);
+  expect(after[2] === before[2]).toBe(true);
+  expect(after.every((source) => source?.startsWith('data:image/'))).toBe(true);
+  expect(await page.getByRole('img',{name:'AI 生成的完整微海报',exact:true}).evaluateAll(xs=>xs.every((image) => (image as HTMLImageElement).naturalWidth > 0))).toBe(true);
+  const redoTask = await page.request.get(`/api/tasks/${taskId}`);
+  expect((await redoTask.json()).result.posters.map((poster: { style: string }) => poster.style)).toEqual(['story']);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.screenshot({ path: `test-results/${testInfo.project.name}-final.png`, fullPage: true });
 });
@@ -88,9 +97,9 @@ test('visual review of the creative screens with a real image fixture', async ({
   await page.evaluate(() => { const el = document.querySelector('.inspiration-section'); if (el) window.scrollTo(0, window.scrollY + el.getBoundingClientRect().top - 75); });
   await page.screenshot({path:`test-results/${testInfo.project.name}-inspiration-viewport.png`});
   await page.getByRole('button',{name:'设计 3 套提示词',exact:true}).click();
-  const promptEditor = page.getByRole('textbox', { name: '方案 A 的提示词' });
+  const promptEditor = page.getByRole('textbox', { name: '构图与场景' });
   const originalPrompt = await promptEditor.inputValue();
-  await promptEditor.fill(originalPrompt.replace('构图：', '布局：'));
+  await promptEditor.fill('');
   await expect(page.getByRole('button',{name:'按当前提示词生成 3 张',exact:true})).toBeDisabled();
   await page.getByRole('button',{name:'恢复模型原稿',exact:true}).tap();
   await expect(promptEditor).toHaveValue(originalPrompt);

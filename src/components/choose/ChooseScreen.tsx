@@ -6,6 +6,7 @@ import { defaultResearchSummary, type PosterDraft, type PosterStyle } from '@/do
 import { posterFilename, saveImage } from '@/lib/export/render-poster';
 import { imageSourceToDataUrl } from '@/lib/projects/image-source';
 import { createProjectSnapshot, projectLibrary } from '@/lib/projects/project-library';
+import { pendingGeneration } from '@/lib/projects/pending-generation';
 import { usePosterStore } from '@/store/use-poster-store';
 
 const styleNames: Record<PosterStyle, string> = { cute: '可爱种草', daily: '手作日常', series: '系列账号', lifestyle: '动态方案 A', story: '动态方案 B', editorial: '动态方案 C' };
@@ -73,7 +74,11 @@ export function ChooseScreen() {
     const snapshot = usePosterStore.getState();
     setProjectNotice('正在自动暂存最近一次结果…');
     void createProjectSnapshot(snapshot)
-      .then((project) => active ? projectLibrary.saveLatest(project) : undefined)
+      .then(async (project) => {
+        if (!active) return;
+        await projectLibrary.saveLatest(project);
+        await pendingGeneration.clearAfterSavedGeneration(generation).catch(() => undefined);
+      })
       .then(() => { if (active) setProjectNotice('已自动暂存最近一次结果，仅此浏览器可恢复。'); })
       .catch(() => { if (active) setProjectNotice('自动暂存失败，请先下载图片。'); });
     return () => { active = false; };

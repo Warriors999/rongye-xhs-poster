@@ -233,7 +233,8 @@
 .rongye-app .review-tabs button[aria-selected=true] { background:#fff; color:#4f382b; box-shadow:0 3px 8px #493c3910; }
 .rongye-app .review-concept { font-size:21px; }
 .rongye-app .review-concept-note { font-size:13px; color:#81705e; margin:8px 0 21px; }
-.rongye-app .review-card textarea { min-height:290px; font-size:14px; line-height:1.85; }
+.rongye-app .review-card .idea-field + .idea-field { margin-top:15px; }
+.rongye-app .review-card .idea-field textarea { min-height:114px; font-size:14px; line-height:1.7; }
 .rongye-app .review-edit-bar { display:flex; align-items:center; justify-content:space-between; font-size:11px; color:#8a7864; }
 .rongye-app .review-edit-bar .text-button { font-size:12px; }
 .rongye-app .review-card > .primary-button { margin-top:15px; }

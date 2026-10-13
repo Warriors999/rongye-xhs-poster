@@ -3,6 +3,7 @@ import { createEmptyDraft, defaultResearchSummary, type GenerationResult, type I
 import { usePosterStore } from '@/store/use-poster-store';
 import { saveImage } from '@/lib/export/render-poster';
 import { projectLibrary } from '@/lib/projects/project-library';
+import { pendingGeneration } from '@/lib/projects/pending-generation';
 import { ChooseScreen } from './ChooseScreen';
 
 vi.mock('@/lib/export/render-poster', () => ({
@@ -80,14 +81,28 @@ describe('ChooseScreen', () => {
 
   it('automatically saves the latest result without a manual button or generation request', async () => {
     vi.mocked(projectLibrary.saveLatest).mockClear();
+    const clear = vi.spyOn(pendingGeneration, 'clearAfterSavedGeneration').mockResolvedValue(undefined);
     const fetcher = vi.fn();
     vi.stubGlobal('fetch', fetcher);
-    render(<ChooseScreen />);
-    await waitFor(() => expect(projectLibrary.saveLatest).toHaveBeenCalledOnce());
-    expect(vi.mocked(projectLibrary.saveLatest).mock.calls[0][0].generation.posters).toHaveLength(3);
-    expect(fetcher).not.toHaveBeenCalled();
-    expect(screen.getByRole('status', { name: '作品保存状态' })).toHaveTextContent('已自动暂存最近一次结果');
-    expect(screen.queryByRole('button', { name: '保存到作品库' })).not.toBeInTheDocument();
+    try {
+      render(<ChooseScreen />);
+      await waitFor(() => expect(projectLibrary.saveLatest).toHaveBeenCalledOnce());
+      await waitFor(() => expect(clear).toHaveBeenCalledOnce());
+      expect(vi.mocked(projectLibrary.saveLatest).mock.calls[0][0].generation.posters).toHaveLength(3);
+      expect(fetcher).not.toHaveBeenCalled();
+      expect(screen.getByRole('status', { name: '作品保存状态' })).toHaveTextContent('已自动暂存最近一次结果');
+      expect(screen.queryByRole('button', { name: '保存到作品库' })).not.toBeInTheDocument();
+    } finally { clear.mockRestore(); }
+  });
+
+  it('keeps the submitted task available if browser result saving fails', async () => {
+    vi.mocked(projectLibrary.saveLatest).mockRejectedValueOnce(new Error('storage full'));
+    const clear = vi.spyOn(pendingGeneration, 'clearAfterSavedGeneration').mockResolvedValue(undefined);
+    try {
+      render(<ChooseScreen />);
+      await screen.findByText('自动暂存失败，请先下载图片。');
+      expect(clear).not.toHaveBeenCalled();
+    } finally { clear.mockRestore(); }
   });
 
   it('shows the actual count and warning when only some posters succeed', async () => {

@@ -43,7 +43,7 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-export async function imageSourceToDataUrl(source: string): Promise<string> {
+export async function imageSourceToDataUrl(source: string, options: { signal?: AbortSignal } = {}): Promise<string> {
   if (source.startsWith('data:')) {
     const svgMatch = SVG_DATA_URL.exec(source);
     if (svgMatch) {
@@ -61,7 +61,7 @@ export async function imageSourceToDataUrl(source: string): Promise<string> {
     return source;
   }
   if (!TASK_ASSET_URL.test(source)) throw new Error('海报图片地址异常，请重试');
-  const response = await fetch(source, { credentials: 'same-origin' });
+  const response = await fetch(source, { credentials: 'same-origin', ...(options.signal ? { signal: options.signal } : {}) });
   if (!response.ok) throw new Error('海报图片暂时无法读取，请重试');
   const contentType = (response.headers.get('content-type') ?? '').split(';', 1)[0].trim().toLowerCase();
   if (!/^image\/(png|jpe?g|webp|gif|svg\+xml)$/.test(contentType)) throw new Error('海报图片格式异常，请重试');

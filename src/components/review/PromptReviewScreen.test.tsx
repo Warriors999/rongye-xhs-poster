@@ -29,21 +29,25 @@ describe('PromptReviewScreen', () => {
     });
   });
 
-  it('allows a valid model prompt but blocks a broken section order before image submission', () => {
+  it('shows only three editable visual descriptions and blocks an empty description', () => {
     render(<PromptReviewScreen />);
     const submit = screen.getByRole('button', { name: '按当前提示词生成 1 张' });
     expect(submit).toBeEnabled();
-    fireEvent.change(screen.getByRole('textbox', { name: '方案 A 的提示词' }), { target: { value: prompt.replace('构图：', '布局：') } });
+    expect(screen.getAllByRole('textbox')).toHaveLength(3);
+    expect(screen.getByRole('textbox', { name: '构图与场景' })).toHaveValue('兔子靠左，右侧留出标题空间');
+    expect(screen.getByRole('textbox', { name: '视觉风格与氛围' })).toHaveValue('真实针织质感的摄影海报');
+    expect(screen.getByRole('textbox', { name: '配色与光线' })).toHaveValue('深蓝背景，柔和侧光');
+    fireEvent.change(screen.getByRole('textbox', { name: '构图与场景' }), { target: { value: '' } });
     expect(submit).toBeDisabled();
-    expect(screen.getByRole('alert')).toHaveTextContent('请保留提示词的八个栏目');
+    expect(screen.getByRole('alert')).toHaveTextContent('请填写三个视觉描述');
   });
 
   it('restores the original prompt on the first touch while the editor has focus', () => {
     render(<PromptReviewScreen />);
-    const editor = screen.getByRole('textbox', { name: '方案 A 的提示词' });
-    fireEvent.change(editor, { target: { value: prompt.replace('构图：', '布局：') } });
+    const editor = screen.getByRole('textbox', { name: '构图与场景' });
+    fireEvent.change(editor, { target: { value: '兔子靠右，左边留白' } });
     editor.focus();
     fireEvent.touchStart(screen.getByRole('button', { name: '恢复模型原稿' }));
-    expect(editor).toHaveValue(prompt);
+    expect(editor).toHaveValue('兔子靠左，右侧留出标题空间');
   });
 });

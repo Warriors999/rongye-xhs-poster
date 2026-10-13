@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { generationResultSchema } from '@/server/ai/contracts';
 import { usePosterStore } from '@/store/use-poster-store';
 import { pendingDraft } from '@/lib/projects/pending-draft';
-import { MAX_EDITABLE_PROMPT_CHARS, PROMPT_PROTECTION, reviewedImagePrompt } from '@/lib/prompt-review';
-import { isStructuredImagePrompt } from '@/lib/image-prompt-spec';
+import { PROMPT_PROTECTION, reviewedImagePrompt } from '@/lib/prompt-review';
+import { MAX_VISUAL_DESCRIPTION_CHARS, canonicalizeApprovedImagePrompt, getEditableImagePrompt, isStructuredImagePrompt } from '@/lib/image-prompt-spec';
 
 export function PromptReviewScreen() {
   const state=usePosterStore();
@@ -35,6 +35,7 @@ export function PromptReviewScreen() {
   },[state.step,state.promptPlan]);
 
   const poster=state.promptPlan?.posters[active];
+  const editable=poster ? getEditableImagePrompt(poster.finalPrompt ?? '') : null;
   const promptsValid = state.promptPlan?.posters.every((item) => isStructuredImagePrompt(item.finalPrompt)) ?? false;
   const submit = async () => {
     if (!state.upload || !state.promptPlan || !promptsValid || submitting) return;
@@ -46,15 +47,15 @@ export function PromptReviewScreen() {
   };
   return <main className="app-shell review-shell"><section className="review-card">
     <p className="kicker">设计在前，生成由你决定</p><div className="choose-heading"><h1>{state.step==='preparing'?'正在设计提示词':'先看看设计提示词'}</h1>{state.upload&&<img className="choose-upload-thumb" src={state.upload.dataUrl} alt="本次玩偶原图"/>}</div>
-    <p className="choose-intro">{state.step==='preparing'?'AI 正在理解原图和想法，结合绒页规范设计方案。':'可以直接保留，也可以修改场景、配色、构图或文字要求。确认后才开始生图。'}</p>
+    <p className="choose-intro">{state.step==='preparing'?'AI 正在理解原图和想法，结合绒页规范设计方案。':'只需调整下面的构图、风格与配色。玩偶身份、准确文字和输出要求会自动保留。确认后才开始生图。'}</p>
     {state.step==='preparing'?<div className="review-wait" role="status"><span className="review-spinner"/>正在准备三套设计，不会调用图片模型…</div>:poster&&<>
       <div className="review-tabs" role="tablist" aria-label="设计方案">{state.promptPlan!.posters.map((p,i)=><button type="button" role="tab" key={p.style} aria-selected={i===active} onClick={()=>setActive(i)}>方案 {String.fromCharCode(65+i)}</button>)}</div>
       <h2 className="review-concept">{poster.design?.label||poster.copy.title}</h2><p className="review-concept-note">{poster.design?.concept}</p>
-      <label className="idea-field"><span>方案 {String.fromCharCode(65+active)} 的提示词</span><textarea rows={9} maxLength={MAX_EDITABLE_PROMPT_CHARS} value={poster.finalPrompt||''} onChange={e=>state.editPrompt(active,e.target.value)}/></label>
-      <div className="review-edit-bar"><span>{(poster.finalPrompt||'').length}/{MAX_EDITABLE_PROMPT_CHARS}</span><button className="text-button" type="button" onTouchStart={()=>state.editPrompt(active,state.originalPrompts[active]||'')} onClick={()=>state.editPrompt(active,state.originalPrompts[active]||'')}>恢复模型原稿</button></div>
+      {([['composition','构图与场景'],['visualLanguage','视觉风格与氛围'],['colorLighting','配色与光线']] as const).map(([field,label])=><label className="idea-field" key={field}><span>{label}</span><textarea rows={3} maxLength={MAX_VISUAL_DESCRIPTION_CHARS} value={editable?.[field] ?? ''} onChange={e=>state.editVisualPrompt(active,field,e.target.value)}/></label>)}
+      <div className="review-edit-bar"><span>仅编辑视觉描述</span><button className="text-button" type="button" onTouchStart={()=>state.resetVisualPrompt(active)} onClick={()=>state.resetVisualPrompt(active)}>恢复模型原稿</button></div>
       <details className="prompt-details"><summary>固定主体保护要求</summary><p>{PROMPT_PROTECTION}</p></details>
-      <details className="prompt-details"><summary>查看将提交的完整提示词</summary><p>{reviewedImagePrompt(poster.finalPrompt||'')}</p></details>
-      {!promptsValid && <p className="save-error" role="alert">请保留提示词的八个栏目：任务、主体、构图、视觉语言、颜色与光线、准确文字、保留、输出。</p>}
+      <details className="prompt-details"><summary>查看将提交的完整提示词</summary><p>{promptsValid ? reviewedImagePrompt(canonicalizeApprovedImagePrompt(poster.finalPrompt||'',poster.copy) ?? '') : '请先填写三个视觉描述。'}</p></details>
+      {!promptsValid && <p className="save-error" role="alert">请填写三个视觉描述，再开始生图。</p>}
       <p className="library-notice" role="status">{saved}</p>{state.error&&<p className="save-error" role="alert">{state.error}</p>}
       <button className="primary-button" type="button" disabled={submitting||!promptsValid} onClick={()=>void submit()}>{submitting?'正在提交…':`按当前提示词生成 ${state.promptPlan!.posters.length} 张`}</button>
     </>}

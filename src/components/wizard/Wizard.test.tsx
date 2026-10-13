@@ -1,7 +1,8 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ImageAsset } from '@/domain/project';
 import { createEmptyDraft, defaultResearchSummary } from '@/domain/project';
 import { projectLibrary } from '@/lib/projects/project-library';
+import { createPendingGenerationTask, pendingGeneration } from '@/lib/projects/pending-generation';
 import { usePosterStore } from '@/store/use-poster-store';
 import { Wizard } from './Wizard';
 
@@ -21,7 +22,7 @@ describe('Wizard', () => {
   it('renders the brand launch screen before the upload home', async () => {
     render(<Wizard />);
 
-    expect(screen.getByRole('heading', { name: '把每只玩偶，做成一张好看的图。' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '每一只用心织出的玩偶，都值得被看见。' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /进入绒页/ })).toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: '主要导航' })).not.toBeInTheDocument();
     expect(screen.queryByText('带上你的玩偶')).not.toBeInTheDocument();
@@ -41,7 +42,7 @@ describe('Wizard', () => {
     expect(screen.queryByRole('heading', { name: '把玩偶照片，变成小红书海报。' })).not.toBeInTheDocument();
   });
 
-  it('keeps the pending generation request alive while browsing the library', () => {
+  it('keeps the pending generation request alive while browsing the library', async () => {
     usePosterStore.getState().setUpload(upload);
     usePosterStore.getState().startGeneration();
     let signal: AbortSignal | undefined;
@@ -50,6 +51,7 @@ describe('Wizard', () => {
       return new Promise<Response>(() => undefined);
     }));
     render(<Wizard />);
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
     fireEvent.click(screen.getByRole('button', { name: '我的作品' }));
     expect(signal?.aborted).toBe(false);
     expect(screen.queryByRole('heading', { name: '正在识别玩偶' })).not.toBeInTheDocument();
@@ -87,5 +89,24 @@ describe('Wizard', () => {
     expect(usePosterStore.getState().step).toBe('choose');
     expect(usePosterStore.getState().generation?.posters).toHaveLength(1);
     list.mockRestore();
+  });
+
+  it('resumes a submitted image task after reload without posting another paid request', async () => {
+    const task = createPendingGenerationTask('task-resume-123', {
+      upload, referenceImage: null, creativeIdea: '暖光', keywords: '针织', forbiddenWords: '',
+      promptPlan: null, originalPrompts: [], generation: null, selectedDraft: null,
+      regenerationTarget: null, revisionPrompt: ''
+    });
+    const read = vi.spyOn(pendingGeneration, 'read').mockResolvedValue(task);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: 'queued', phase: 'queued', progress: 0, warnings: [], expiresAt: Date.now() + 60_000 }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      render(<Wizard />);
+      await waitFor(() => expect(usePosterStore.getState().step).toBe('generating'));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      expect(fetchMock.mock.calls[0][0]).toBe('/api/tasks/task-resume-123');
+      expect(fetchMock.mock.calls.some(([url]) => url === '/api/render' || url === '/api/generate')).toBe(false);
+    } finally { read.mockRestore(); }
   });
 });

@@ -124,7 +124,9 @@ export function cloneTaskValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-export function safeTaskError(_error: unknown): string {
+export function safeTaskError(error: unknown): string {
+  const message = error instanceof Error ? error.message : error;
+  if (message === '图片已生成但暂存失败；重新生成会再次调用图片模型') return message;
   return '生成服务暂时不可用，请重试';
 }
 

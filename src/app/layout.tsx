@@ -4,7 +4,7 @@ import './rongye.css';
 
 export const metadata: Metadata = {
   title: '绒页｜小红书微海报',
-  description: '把每只玩偶，做成一张好看的图。',
+  description: '每一只用心织出的玩偶，都值得被看见。',
   manifest: '/manifest.webmanifest'
 };
 

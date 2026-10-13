@@ -30,6 +30,29 @@ function warningForInvalidAsset(style: PosterStyle): string {
   return `${directionNames[style] ?? '该'}方向的图片格式异常，已跳过。`;
 }
 
+function warningForStorageFailure(style: PosterStyle): string {
+  return `${directionNames[style] ?? '该'} 的图片暂存失败，已跳过。`;
+}
+
+type DeliveryStage = 'input-read' | 'generate' | 'phase-update' | 'asset-decode' | 'asset-write' | 'result-update';
+
+function logTaskFailure(taskId: string, stage: DeliveryStage, error: unknown): void {
+  const code = error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')
+    ? 'timeout-or-abort'
+    : error instanceof Error && error.message === 'no valid generated image'
+      ? 'no-valid-image'
+      : stage === 'asset-write'
+        ? 'storage-error'
+        : stage === 'phase-update' || stage === 'result-update'
+          ? 'persistence-error'
+          : stage === 'asset-decode'
+            ? 'invalid-image'
+            : stage === 'input-read'
+              ? 'missing-input'
+              : 'generation-error';
+  console.error(`[generation-task] task=${taskId.slice(0, 8)} stage=${stage} code=${code}`);
+}
+
 function withTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -82,6 +105,7 @@ export async function processTask(job: GenerationJob, runtime: WorkerRuntime, op
     }
   }
   let claimed;
+  let stage: DeliveryStage = 'input-read';
   try {
     claimed = await runtime.store.claim(job.taskId);
   } catch {
@@ -116,31 +140,51 @@ export async function processTask(job: GenerationJob, runtime: WorkerRuntime, op
     };
     const env = { ...(runtime.env ?? process.env), ...(job.config.mode === 'mock' ? { AI_PROVIDER: 'mock' } : {}) };
     const generator = runtime.generate ?? generatePosters;
+    stage = 'generate';
     const result = await withTimeout(
       (signal) => generator(input, { signal, timeoutMs: DEFAULT_TASK_TIMEOUT_MS, dependencies: { env }, onPhase: async (phase) => {
         const progress = { researching: 20, designing: 40, generating: 65, checking: 90 }[phase];
+        stage = 'phase-update';
         await runtime.store.update(job.taskId, { phase, progress });
+        stage = 'generate';
       } }),
       runtime.timeoutMs ?? DEFAULT_TASK_TIMEOUT_MS
     );
+    stage = 'phase-update';
     await runtime.store.update(job.taskId, { phase: 'checking', progress: 90 });
     const posters: TaskResult['posters'] = [];
     const warnings = [...(result.warnings ?? [])];
+    let storageFailures = 0;
     for (const poster of result.posters) {
       try {
+        stage = 'asset-decode';
         const decoded = decodeImageDataUrl(poster.image.dataUrl);
         const key = assetKeyFor(job.taskId, poster.style);
+        stage = 'asset-write';
         await runtime.storage.put(key, decoded.bytes, decoded.contentType);
         posters.push({ ...cloneTaskValue(poster), image: imageMetadata(poster.style, poster.image, key, decoded.contentType) });
-      } catch {
-        warnings.push(warningForInvalidAsset(poster.style));
+      } catch (error) {
+        logTaskFailure(job.taskId, stage, error);
+        if (stage === 'asset-write') {
+          storageFailures += 1;
+          warnings.push(warningForStorageFailure(poster.style));
+        } else {
+          warnings.push(warningForInvalidAsset(poster.style));
+        }
       }
     }
+    if (posters.length === 0 && storageFailures > 0) {
+      stage = 'result-update';
+      const failed = await runtime.store.update(job.taskId, { status: 'failed', phase: 'failed', progress: 100, warnings, error: '图片已生成但暂存失败；重新生成会再次调用图片模型' });
+      return failed?.status === 'failed' ? { ack: true, reason: 'terminal' } : { ack: false, reason: 'persistence-failed' };
+    }
     if (posters.length === 0) throw new Error('no valid generated image');
+    stage = 'result-update';
     const succeeded = await runtime.store.update(job.taskId, { status: 'succeeded', phase: 'completed', progress: 100, warnings, result: { analysis: cloneTaskValue(result.analysis), research: cloneTaskValue(result.research), posters, ...(warnings.length ? { warnings } : {}) } });
     if (!succeeded || succeeded.status !== 'succeeded') throw new Error('task result persistence failed');
     return { ack: true, reason: 'terminal' };
   } catch (error) {
+    logTaskFailure(job.taskId, stage, error);
     return retryOrFail(job, runtime);
   }
 }

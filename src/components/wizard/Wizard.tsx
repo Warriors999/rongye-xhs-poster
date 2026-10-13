@@ -10,6 +10,7 @@ import { UploadScreen } from '@/components/upload/UploadScreen';
 import { LibraryScreen } from '@/components/library/LibraryScreen';
 import { PromptReviewScreen } from '@/components/review/PromptReviewScreen';
 import { pendingDraft, type PendingDraft } from '@/lib/projects/pending-draft';
+import { pendingGeneration } from '@/lib/projects/pending-generation';
 import { projectLibrary, type SavedProject } from '@/lib/projects/project-library';
 import { usePosterStore } from '@/store/use-poster-store';
 
@@ -25,6 +26,17 @@ export function Wizard() {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [savedDraft,setSavedDraft]=useState<PendingDraft|null>(null);
   const [lastSaved,setLastSaved]=useState<SavedProject|null>(null);
+  useEffect(() => {
+    let active = true;
+    void pendingGeneration.read().then((task) => {
+      if (!active || !task) return;
+      const current = usePosterStore.getState();
+      if (current.step !== 'upload' || current.upload) return;
+      usePosterStore.setState({ ...task.snapshot, step: 'generating', error: null });
+      setHasEntered(true);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
   useEffect(()=>{let active=true;void pendingDraft.read().then(draft=>{if(active&&draft)setSavedDraft(draft)}).catch(()=>undefined);return()=>{active=false}},[]);
   useEffect(()=>{if(completedPromptPlan>0){setSavedDraft(null);void pendingDraft.clear().catch(()=>undefined)}},[completedPromptPlan]);
   useEffect(()=>{if(step==='upload'){let active=true;void pendingDraft.read().then(draft=>{if(active)setSavedDraft(draft??null)}).catch(()=>undefined);return()=>{active=false}}},[step]);

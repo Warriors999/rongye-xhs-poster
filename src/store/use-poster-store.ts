@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { CopyGenerationResult, ImageAsset, GenerationResult, PosterDraft, WizardStep } from '@/domain/project';
 import type { SavedProject } from '@/lib/projects/project-library';
-import { MAX_EDITABLE_PROMPT_CHARS } from '@/lib/prompt-review';
+import { editVisualImagePrompt, isStructuredImagePrompt, type EditableImagePromptField } from '@/lib/image-prompt-spec';
 
 export function cloneDraft(draft: PosterDraft): PosterDraft {
   return {
@@ -74,7 +74,8 @@ export interface PosterStore {
   completedPromptPlan: number;
   startDesign: () => void;
   setPromptPlan: (plan: GenerationResult) => void;
-  editPrompt: (index: number, prompt: string) => void;
+  editVisualPrompt: (index: number, field: EditableImagePromptField, text: string) => void;
+  resetVisualPrompt: (index: number) => void;
   submitPrompts: () => void;
   setUpload: (upload: ImageAsset | null) => void;
   setReferenceImage: (image: ImageAsset | null) => void;
@@ -132,8 +133,9 @@ export const usePosterStore = create<PosterStore>((set) => ({
   ...initialState,
   startDesign: () => set((state) => state.upload && (state.step === 'upload' || state.step === 'review' || state.step === 'choose') ? { step:'preparing',generation:null,promptPlan:null,originalPrompts:[],error:null,selectedDraft:null,copyResult:null,copyError:null,exportResult:null,regenerationTarget:null,revisionPrompt:'' } : state),
   setPromptPlan: (plan) => set((state) => state.step === 'preparing' ? {promptPlan:cloneGeneration(plan),originalPrompts:plan.posters.map((poster)=>poster.finalPrompt ?? ''),step:'review',error:null} : state),
-  editPrompt: (index,prompt) => set((state) => state.promptPlan && state.step === 'review' ? {promptPlan:{...state.promptPlan,posters:state.promptPlan.posters.map((poster,i)=>i===index?{...poster,finalPrompt:prompt.slice(0,MAX_EDITABLE_PROMPT_CHARS)}:poster)}} : state),
-  submitPrompts: () => set((state) => state.step === 'review' && state.promptPlan?.posters.every((poster)=>poster.finalPrompt?.trim()) ? {step:'generating',error:null,regenerationTarget:null,revisionPrompt:''} : state),
+  editVisualPrompt: (index,field,text) => set((state) => state.promptPlan && state.step === 'review' ? {promptPlan:{...state.promptPlan,posters:state.promptPlan.posters.map((poster,i)=>i===index?{...poster,finalPrompt:editVisualImagePrompt(poster.finalPrompt ?? '',field,text) ?? poster.finalPrompt}:poster)}} : state),
+  resetVisualPrompt: (index) => set((state) => state.promptPlan && state.step === 'review' ? {promptPlan:{...state.promptPlan,posters:state.promptPlan.posters.map((poster,i)=>i===index?{...poster,finalPrompt:state.originalPrompts[index] ?? poster.finalPrompt}:poster)}} : state),
+  submitPrompts: () => set((state) => state.step === 'review' && state.promptPlan?.posters.every((poster)=>isStructuredImagePrompt(poster.finalPrompt)) ? {step:'generating',error:null,regenerationTarget:null,revisionPrompt:''} : state),
   setUpload: (upload) => set({ upload }),
   setReferenceImage: (referenceImage) => set({ referenceImage }),
   setRevisionPrompt: (revisionPrompt) => set({ revisionPrompt }),

@@ -2,7 +2,7 @@ import { defaultResearchSummary, createEmptyDraft, type BeautifyMode, type Desig
 import { resolveDesignBrief, sanitizeDesignText } from '@/lib/design-system';
 import { getImageProvider, getProvider, getReferenceResearcher, type GenerationInput, type Provider, type ProviderDependencies } from '@/server/ai/provider';
 import { buildPosterPrompt, IMAGE_FORMAT_ERROR, IMAGE_PROVIDER_UNAVAILABLE_ERROR, isRetryableImageError, type ImageBeautifier } from '@/server/ai/image-provider';
-import { isStructuredImagePrompt } from '@/lib/image-prompt-spec';
+import { canonicalizeApprovedImagePrompt, isStructuredImagePrompt } from '@/lib/image-prompt-spec';
 import type { QualityChecker } from '@/server/ai/quality-provider';
 import { consumeRetryBudget, createCombinedSignal, createRetryBudget, throwIfAborted, withDeadline, type AICallOptions } from '@/server/ai/call-options';
 import type { GenerateResponse } from '@/server/ai/contracts';
@@ -373,7 +373,12 @@ export async function generatePosters(input: GeneratePostersInput, options: Gene
     const candidates = input.targetStyle
       ? [result.posters.find((poster) => directionForStyle(poster.style) === directionForStyle(input.targetStyle!)) ?? result.posters[0]].filter(Boolean).map((poster) => ({ ...poster, style: directionForStyle(input.targetStyle!) }))
       : result.posters;
-    const preparedPosters = candidates.map((poster) => safePoster(security, input.targetStyle && input.selectedPosterCopy ? { ...poster, copy: input.selectedPosterCopy } : poster, input.image, research));
+    const preparedPosters = candidates.map((poster) => {
+      const prepared = safePoster(security, input.targetStyle && input.selectedPosterCopy ? { ...poster, copy: input.selectedPosterCopy } : poster, input.image, research);
+      return input.approvedPlan
+        ? { ...prepared, finalPrompt: canonicalizeApprovedImagePrompt(prepared.finalPrompt ?? '', prepared.copy) ?? undefined }
+        : prepared;
+    });
     if (input.approvedPlan && preparedPosters.some((poster)=>!poster.finalPrompt)) throw new Error('提示词或方案无效，请检查后重试');
     if (options.designOnly) {
       if (preparedPosters.some((poster) => !isStructuredImagePrompt(poster.finalPrompt))) throw new Error('设计提示词结构无效，请重新设计');

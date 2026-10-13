@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createEmptyDraft, defaultResearchSummary, type GenerationResult, type ImageAsset } from '@/domain/project';
 import { usePosterStore } from '@/store/use-poster-store';
+import { pendingGeneration } from '@/lib/projects/pending-generation';
 import { GenerationScreen } from './GenerationScreen';
 
 const upload: ImageAsset = {
@@ -46,6 +47,10 @@ function taskResultFromGeneration(generation = createGeneration()) {
       }
     }))
   };
+}
+
+function assetResponse() {
+  return new Response(new Uint8Array([137, 80, 78, 71]), { status: 200, headers: { 'content-type': 'image/png' } });
 }
 
 describe('GenerationScreen', () => {
@@ -94,7 +99,8 @@ describe('GenerationScreen', () => {
     const result = taskResultFromGeneration({ ...createGeneration(), posters: [{ ...before.posters[1], image: { ...upload, id: 'new-story' } }] });
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-redo-1', status: 'queued' }), { status: 202 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-redo-1', status: 'succeeded', phase: 'completed', progress: 100, warnings: [], expiresAt: Date.now() + 60_000, result }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-redo-1', status: 'succeeded', phase: 'completed', progress: 100, warnings: [], expiresAt: Date.now() + 60_000, result }), { status: 200 }))
+      .mockResolvedValueOnce(assetResponse());
     vi.stubGlobal('fetch', fetchMock);
     render(<GenerationScreen />);
     expect(screen.getByText('正在重做这张海报')).toBeInTheDocument();
@@ -117,7 +123,10 @@ describe('GenerationScreen', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-poll-1', status: 'queued' }), { status: 202 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-poll-1', status: 'running', phase: 'researching', progress: 35, warnings: [], expiresAt: Date.now() + 60_000 }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-poll-1', status: 'succeeded', phase: 'completed', progress: 100, warnings: [], expiresAt: Date.now() + 60_000, result: taskResultFromGeneration() }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-poll-1', status: 'succeeded', phase: 'completed', progress: 100, warnings: [], expiresAt: Date.now() + 60_000, result: taskResultFromGeneration() }), { status: 200 }))
+      .mockResolvedValueOnce(assetResponse())
+      .mockResolvedValueOnce(assetResponse())
+      .mockResolvedValueOnce(assetResponse());
     vi.stubGlobal('fetch', fetchMock);
 
     render(<GenerationScreen />);
@@ -125,9 +134,96 @@ describe('GenerationScreen', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
     await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
 
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/generate', '/api/tasks/task-poll-1', '/api/tasks/task-poll-1']);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/generate', '/api/tasks/task-poll-1', '/api/tasks/task-poll-1', '/api/tasks/task-poll-1?asset=lifestyle', '/api/tasks/task-poll-1?asset=story', '/api/tasks/task-poll-1?asset=editorial']);
     expect(usePosterStore.getState().step).toBe('choose');
-    expect(usePosterStore.getState().generation?.posters[0].image.dataUrl).toBe('/api/tasks/task-poll-1?asset=lifestyle');
+    expect(usePosterStore.getState().generation?.posters[0].image.dataUrl).toBe('data:image/png;base64,iVBORw==');
+  });
+
+  it('keeps waiting for an existing task after one mobile network interruption', async () => {
+    vi.useFakeTimers();
+    const result = taskResultFromGeneration({ ...createGeneration(), posters: createGeneration().posters.slice(0, 1) });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-poll-1', status: 'queued' }), { status: 202 }))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-poll-1', status: 'succeeded', phase: 'completed', progress: 100, warnings: [], expiresAt: Date.now() + 60_000, result }), { status: 200 }))
+      .mockResolvedValueOnce(assetResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<GenerationScreen />);
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+
+    expect(usePosterStore.getState().step).toBe('choose');
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/generate')).toHaveLength(1);
+  });
+
+  it('loads the generated image bytes before showing a successful task', async () => {
+    const result = taskResultFromGeneration({ ...createGeneration(), posters: createGeneration().posters.slice(0, 1) });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-poll-1', status: 'queued' }), { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-poll-1', status: 'succeeded', phase: 'completed', progress: 100, warnings: [], expiresAt: Date.now() + 60_000, result }), { status: 200 }))
+      .mockResolvedValueOnce(assetResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<GenerationScreen />);
+    await waitFor(() => expect(usePosterStore.getState().step).toBe('choose'));
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/generate', '/api/tasks/task-poll-1', '/api/tasks/task-poll-1?asset=lifestyle'
+    ]);
+    expect(usePosterStore.getState().generation?.posters[0].image.dataUrl).toBe('data:image/png;base64,iVBORw==');
+  });
+
+  it('saves a submitted task before polling so a refreshed phone can resume it', async () => {
+    const read = vi.spyOn(pendingGeneration, 'read').mockResolvedValue(undefined);
+    const save = vi.spyOn(pendingGeneration, 'save').mockResolvedValue(undefined);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-persist-1', status: 'queued' }), { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'queued', phase: 'queued', progress: 0, warnings: [], expiresAt: Date.now() + 60_000 }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      render(<GenerationScreen />);
+      await waitFor(() => expect(save).toHaveBeenCalled());
+      expect(save.mock.calls[0][0]).toMatchObject({ taskId: 'task-persist-1', snapshot: { upload, keywords: '春日' } });
+      expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/generate', '/api/tasks/task-persist-1']);
+    } finally { read.mockRestore(); save.mockRestore(); }
+  });
+
+  it('warns when browser task recovery cannot be saved but keeps waiting for the submitted task', async () => {
+    const read = vi.spyOn(pendingGeneration, 'read').mockResolvedValue(undefined);
+    const save = vi.spyOn(pendingGeneration, 'save').mockRejectedValue(new Error('quota exceeded'));
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-persist-2', status: 'queued' }), { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'queued', phase: 'queued', progress: 0, warnings: [], expiresAt: Date.now() + 60_000 }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      render(<GenerationScreen />);
+      expect(await screen.findByRole('alert')).toHaveTextContent('当前浏览器无法保存任务，请保持页面打开直到生成完成');
+      expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/generate', '/api/tasks/task-persist-2']);
+    } finally { read.mockRestore(); save.mockRestore(); }
+  });
+
+  it('keeps readable images if the server loses an asset before mobile delivery', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-poll-1', status: 'queued' }), { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-poll-1', status: 'succeeded', phase: 'completed', progress: 100, warnings: [], expiresAt: Date.now() + 60_000, result: taskResultFromGeneration() }), { status: 200 }))
+      .mockResolvedValueOnce(assetResponse())
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: '任务不存在或已过期' }), { status: 503 }))
+      .mockResolvedValueOnce(assetResponse())
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: '任务不存在或已过期' }), { status: 404 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<GenerationScreen />);
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+
+    expect(usePosterStore.getState().step).toBe('choose');
+    expect(usePosterStore.getState().generation?.posters.map((poster) => poster.style)).toEqual(['lifestyle', 'editorial']);
+    expect(usePosterStore.getState().generation?.warnings).toContain('部分图片暂时无法读取，已保留收到的图片。');
   });
 
   it('rejects a succeeded task without research and preserves all retry inputs', async () => {
@@ -145,6 +241,7 @@ describe('GenerationScreen', () => {
   it('rejects a task poster with an unsafe asset URL', async () => {
     const result = taskResultFromGeneration();
     result.posters[0].image.assetUrl = 'javascript:alert(1)';
+    const clear = vi.spyOn(pendingGeneration, 'clear').mockResolvedValue(undefined);
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-invalid-2', status: 'queued' }), { status: 202 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-invalid-2', status: 'succeeded', phase: 'completed', progress: 100, warnings: [], expiresAt: Date.now() + 60_000, result }), { status: 200 })));
@@ -152,6 +249,8 @@ describe('GenerationScreen', () => {
     render(<GenerationScreen />);
     expect(await screen.findByRole('alert')).toHaveTextContent('生成结果格式异常，请重试');
     expect(usePosterStore.getState().step).toBe('upload');
+    expect(clear).toHaveBeenCalledOnce();
+    clear.mockRestore();
   });
 
   it('keeps the upload inputs after a failed task and can retry', async () => {
@@ -159,7 +258,10 @@ describe('GenerationScreen', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-failed-1', status: 'queued' }), { status: 202 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-failed-1', status: 'failed', phase: 'failed', progress: 100, warnings: [], error: '生成服务暂时不可用，请重试', expiresAt: Date.now() + 60_000 }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-retry-1', status: 'queued' }), { status: 202 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-retry-1', status: 'succeeded', phase: 'completed', progress: 100, warnings: [], expiresAt: Date.now() + 60_000, result: taskResultFromGeneration() }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'task-retry-1', status: 'succeeded', phase: 'completed', progress: 100, warnings: [], expiresAt: Date.now() + 60_000, result: taskResultFromGeneration() }), { status: 200 }))
+      .mockResolvedValueOnce(assetResponse())
+      .mockResolvedValueOnce(assetResponse())
+      .mockResolvedValueOnce(assetResponse());
     vi.stubGlobal('fetch', fetchMock);
 
     render(<GenerationScreen />);
@@ -169,7 +271,7 @@ describe('GenerationScreen', () => {
     await waitFor(() => expect(usePosterStore.getState().step).toBe('choose'));
   });
 
-  it('aborts submission or polling when leaving the generating screen', () => {
+  it('aborts submission or polling when leaving the generating screen', async () => {
     let signal: AbortSignal | undefined;
     const fetchMock = vi.fn((_url: string, options: RequestInit) => {
       signal = options.signal ?? undefined;
@@ -177,6 +279,7 @@ describe('GenerationScreen', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
     const { unmount } = render(<GenerationScreen />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     unmount();
     expect(signal?.aborted).toBe(true);
   });

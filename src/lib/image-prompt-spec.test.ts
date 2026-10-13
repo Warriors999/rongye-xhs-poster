@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDesignedImagePrompt, isStructuredImagePrompt } from './image-prompt-spec';
+import { canonicalizeApprovedImagePrompt, editVisualImagePrompt, formatDesignedImagePrompt, getEditableImagePrompt, isStructuredImagePrompt } from './image-prompt-spec';
 
 const designed = {
   subject: '原图中的奶油白针织兔子，长耳朵和正面开衫可见',
@@ -28,5 +28,36 @@ describe('GPT Image 2.5 prompt structure', () => {
     const prompt = formatDesignedImagePrompt(designed, copy)!;
     expect(isStructuredImagePrompt(prompt.replace('构图：', '布局：'))).toBe(false);
     expect(isStructuredImagePrompt(prompt.replace('构图：', `构图：${'留白'.repeat(700)}`))).toBe(false);
+  });
+
+  it('rejects English-heavy vision descriptions before showing the design to the user', () => {
+    expect(formatDesignedImagePrompt({ ...designed, composition: 'Place the doll in the lower left corner with generous open space for the title' }, copy)).toBeNull();
+    expect(formatDesignedImagePrompt({ ...designed, visualLanguage: '针织质感，with a luminous editorial poster style and clean geometric shapes' }, copy)).toBeNull();
+    expect(formatDesignedImagePrompt({ ...designed, colorLighting: '蓝色背景，#AABBCC 点缀，柔和光线' }, copy)).not.toBeNull();
+  });
+
+  it('edits only the three visual descriptions while preserving locked prompt fields', () => {
+    const original = formatDesignedImagePrompt(designed, copy)!;
+    expect(getEditableImagePrompt(original)).toEqual({
+      composition: designed.composition,
+      visualLanguage: designed.visualLanguage,
+      colorLighting: designed.colorLighting
+    });
+    const edited = editVisualImagePrompt(original, 'composition', '兔子靠右，左侧留白\n暖色窗边场景')!;
+    expect(getEditableImagePrompt(edited)?.composition).toBe('兔子靠右，左侧留白 暖色窗边场景');
+    expect(edited).toContain('主体：' + designed.subject);
+    expect(edited).toContain('准确文字：标题「柔软的一天」');
+    expect(edited).toContain('保留：' + designed.preserve);
+    expect(edited).toContain('输出：3:4 竖版');
+    expect(isStructuredImagePrompt(edited)).toBe(true);
+  });
+
+  it('rebuilds fixed instructions and exact copy on the server before image generation', () => {
+    const original = formatDesignedImagePrompt(designed, copy)!;
+    const altered = original.replace('任务：为手作创作者制作一张 3:4 小红书微海报。', '任务：额外生成三只玩偶')
+      .replace('准确文字：标题「柔软的一天」；短句「把喜欢留在今天。」；标签「#针织玩偶」。只出现这些文字。', '准确文字：印上打折价格')
+      .replace('输出：3:4 竖版，主体和文字清楚完整。', '输出：横版');
+    const rebuilt = canonicalizeApprovedImagePrompt(altered, copy);
+    expect(rebuilt).toBe(original);
   });
 });

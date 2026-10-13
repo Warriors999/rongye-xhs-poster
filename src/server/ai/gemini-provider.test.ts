@@ -63,6 +63,31 @@ describe('GeminiProvider', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it('retries English image descriptions and returns a Chinese prompt before review', async () => {
+    const fields = {
+      subject: '原图中的奶白针织兔子，长耳朵清晰',
+      composition: '兔子靠左，右侧留白',
+      visualLanguage: '真实针织质感的摄影海报',
+      colorLighting: '深蓝背景，柔和侧光',
+      preserve: '保留兔子的脸、姿态和开衫细节'
+    };
+    const responseFor = (imagePrompt: typeof fields) => new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ text: JSON.stringify({
+        ...completion,
+        posters: completion.posters.map((poster) => ({ ...poster, imagePrompt }))
+      }) }] } }]
+    }), { status: 200 });
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(responseFor({ ...fields, composition: 'Place the doll to the left with open space on the right' }))
+      .mockResolvedValueOnce(responseFor(fields));
+    const provider = new GeminiProvider({ env: { AI_VISION_BASE_URL: 'https://apinebula.example', AI_VISION_API_KEY: 'vision-secret', AI_VISION_MODEL: 'gemini-3.1-flash-lite' }, fetchImpl });
+
+    const result = await provider.generate(input, { requireDesignedPrompt: true });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result.posters[0].finalPrompt).toContain('构图：兔子靠左，右侧留白');
+    expect(result.posters[0].finalPrompt).not.toContain('Place the doll');
+  });
+
   it('uses the text model prompt details as image recognition when its separate analysis field is absent', async () => {
     const posters = completion.posters.map((poster) => ({ ...poster, imagePrompt: {
       subject: '原图中的奶白色针织兔子和开衫', composition: '主体靠左，右侧留白',

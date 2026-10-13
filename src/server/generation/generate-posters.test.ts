@@ -513,14 +513,25 @@ describe('single poster revision and real phases', () => {
 
   it('renders confirmed prompts without invoking the text model again', async () => {
     const plan = generatedResult();
-    plan.posters.forEach(poster=>{poster.finalPrompt='依据原图保留玩偶，清晰构图。'});
-    plan.posters[0].finalPrompt = '用户编辑：背景使用宝蓝色，标题置于右侧。';
+    plan.posters.forEach(poster=>{poster.finalPrompt=formatDesignedImagePrompt({
+      subject:'原图中的真实针织兔子，长耳朵和开衫可见',composition:'主体靠左，右侧留白',
+      visualLanguage:'真实针织质感的摄影海报',colorLighting:'蓝色背景与柔和侧光',
+      preserve:'原图玩偶的身份、姿态和配件位置保持原样'
+    },poster.copy)??undefined});
+    plan.posters[0].finalPrompt = plan.posters[0].finalPrompt!
+      .replace('构图：主体靠左，右侧留白','构图：背景使用宝蓝色，标题置于右侧')
+      .replace('任务：为手作创作者制作一张 3:4 小红书微海报。','任务：绘制方形卡片')
+      .replace(/^准确文字：.*$/m,'准确文字：随意改变文案')
+      .replace('输出：3:4 竖版，主体和文字清楚完整。','输出：方形');
     const getProvider = vi.fn();
     const beautify = vi.fn().mockImplementation(async ({image})=>image);
     const result = await generatePosters({...input(),approvedPlan:plan},{dependencies:dependencies({getProvider,getImageProvider:()=>({beautify})})});
     expect(getProvider).not.toHaveBeenCalled();
     expect(beautify).toHaveBeenCalledTimes(3);
-    expect(result.posters[0].finalPrompt).toContain('用户编辑：背景使用宝蓝色');
+    expect(result.posters[0].finalPrompt).toContain('构图：背景使用宝蓝色，标题置于右侧');
+    expect(result.posters[0].finalPrompt).toContain(`准确文字：标题「${result.posters[0].copy.title}」`);
+    expect(result.posters[0].finalPrompt).toContain('输出：3:4 竖版');
+    expect(result.posters[0].finalPrompt).not.toContain('随意改变文案');
     expect(result.posters[0].finalPrompt).toBe(buildPosterPrompt(beautify.mock.calls[0][0].poster));
   });
   it('does not copy the other schemes into one image request', async () => {

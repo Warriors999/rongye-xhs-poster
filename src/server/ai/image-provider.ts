@@ -254,6 +254,10 @@ function isImageFormatError(error: unknown): boolean {
   return error instanceof Error && error.message === IMAGE_FORMAT_ERROR;
 }
 
+function logImageFailure(stage: 'response-read' | 'upstream-response' | 'payload-parse' | 'image-normalize', status: number | 'unknown', code: 'invalid-image' | 'unavailable' | 'aborted'): void {
+  console.error(`[image-delivery] stage=${stage} status=${status} code=${code}`);
+}
+
 const PNG_CRC_TABLE = Array.from({ length: 256 }, (_, index) => {
   let value = index;
   for (let bit = 0; bit < 8; bit += 1) value = (value & 1) ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
@@ -391,18 +395,21 @@ export class ImageProvider implements ImageBeautifier {
         body: form
       }, options);
     } catch (error) {
-      if (isImageFormatError(error)) throw error;
-      if (options.signal?.aborted) throw error;
+      if (isImageFormatError(error)) { logImageFailure('response-read', 'unknown', 'invalid-image'); throw error; }
+      if (options.signal?.aborted) { logImageFailure('response-read', 'unknown', 'aborted'); throw error; }
       if (error instanceof ImageProviderError) throw error;
+      logImageFailure('response-read', 'unknown', 'unavailable');
       throw new ImageProviderError(IMAGE_PROVIDER_UNAVAILABLE_ERROR, options.retryMode === 'business');
     }
     const response = result.response;
     if (debug) console.info(`[ai-debug] image response mode=${mode} status=${response.status} bodyBytes=${result.bodyText?.length ?? 0}`);
     if (!response.ok) {
+      logImageFailure('upstream-response', response.status, 'unavailable');
       discardResponseBody(response);
       throw new ImageProviderError(IMAGE_PROVIDER_UNAVAILABLE_ERROR, isTransientStatus(response.status));
     }
 
+    let stage: 'payload-parse' | 'image-normalize' = 'payload-parse';
     try {
       const body = JSON.parse(result.bodyText ?? '') as { data?: Array<{ b64_json?: unknown }> };
       const encoded = body.data?.[0]?.b64_json;
@@ -410,6 +417,7 @@ export class ImageProvider implements ImageBeautifier {
       if (typeof encoded !== 'string' || !isPngBase64(encoded)) throw new Error(IMAGE_FORMAT_ERROR);
       const bytes = Buffer.from(encoded, 'base64');
       const background = poster?.design.palette.find((color) => /^#[0-9a-fA-F]{6}$/.test(color));
+      stage = 'image-normalize';
       const output = poster ? await normalizePosterOutput(bytes, background) : { bytes, width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20), padded: false };
       if (debug) console.info(`[ai-debug] image delivered width=${output.width} height=${output.height} padded=${output.padded}`);
       return {
@@ -422,6 +430,7 @@ export class ImageProvider implements ImageBeautifier {
         mode
       };
     } catch (error) {
+      logImageFailure(stage, response.status, 'invalid-image');
       if (isImageFormatError(error)) throw error;
       throw new Error(IMAGE_FORMAT_ERROR);
     }
