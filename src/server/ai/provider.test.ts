@@ -36,6 +36,19 @@ const validCompletion = {
 };
 
 describe('AI providers', () => {
+  it('formats designed image prompt fields from the OpenAI-compatible vision response', async () => {
+    const posters = validCompletion.posters.map((poster) => ({ ...poster, imagePrompt: {
+      subject: '原图中的针织兔子，长耳朵与开衫清晰',
+      composition: '主体靠左，右上角为短标题留白',
+      visualLanguage: '真实针织质感的摄影海报',
+      colorLighting: '深蓝背景，柔和侧光',
+      preserve: '原图玩偶的脸、姿态和配件位置'
+    } }));
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ...validCompletion, posters }) } }] }), { status: 200 }));
+    const provider = new OpenAICompatibleProvider({ env: { AI_BASE_URL: 'https://example.test/v1', AI_API_KEY: 'key', AI_VISION_MODEL: 'vision', AI_IMAGE_MODEL: 'image' }, fetchImpl });
+    const result = await provider.generate(input, { requireDesignedPrompt: true });
+    expect(result.posters[0].finalPrompt).toContain('构图：主体靠左');
+  });
   let originalProvider: string | undefined;
 
   beforeEach(() => {
@@ -56,6 +69,11 @@ describe('AI providers', () => {
   it('returns the mock provider when configured', () => {
     vi.stubEnv('AI_PROVIDER', 'mock');
     expect(getProvider()).toBeInstanceOf(MockProvider);
+  });
+
+  it('gives mock design reviews the same structured prompt format', async () => {
+    const result = await new MockProvider().generate(input);
+    expect(result.posters.every((poster) => poster.finalPrompt?.startsWith('任务：'))).toBe(true);
   });
 
   it('passes injected environment to the mock image provider factory', async () => {

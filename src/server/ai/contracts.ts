@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { isStructuredImagePrompt } from '@/lib/image-prompt-spec';
+import { MAX_EDITABLE_PROMPT_CHARS } from '@/lib/prompt-review';
 import type {
   CopyData,
   DesignBrief,
@@ -230,7 +232,7 @@ export const generateResponseSchema = generationResultSchema;
 export const approvedPlanSchema = z.object({
   analysis: generationResultSchema.shape.analysis,
   research: researchSummarySchema,
-  posters: z.array(posterDraftSchema.omit({ image: true, layers: true }).extend({ finalPrompt: z.string().trim().min(1).max(8000) })).min(1).max(3)
+  posters: z.array(posterDraftSchema.omit({ image: true, layers: true }).extend({ finalPrompt: z.string().trim().min(1).max(MAX_EDITABLE_PROMPT_CHARS).refine(isStructuredImagePrompt, '提示词结构无效，请保留八个栏目') })).min(1).max(3)
 }).superRefine((value, context) => {
   if (new Set(value.posters.map((poster) => poster.style)).size !== value.posters.length) context.addIssue({code:'custom',message:'方案不能重复'});
 });

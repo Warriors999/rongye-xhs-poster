@@ -6,6 +6,8 @@ export interface RetryBudget {
 
 export interface AICallOptions {
   signal?: AbortSignal;
+  /** Require each vision-model plan to include its own structured image prompt. */
+  requireDesignedPrompt?: boolean;
   /** Business orchestration owns retries when set to `business`. */
   retryMode?: RetryMode;
   retryBudget?: RetryBudget;

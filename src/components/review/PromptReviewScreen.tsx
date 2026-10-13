@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { generationResultSchema } from '@/server/ai/contracts';
 import { usePosterStore } from '@/store/use-poster-store';
 import { pendingDraft } from '@/lib/projects/pending-draft';
-import { PROMPT_PROTECTION, reviewedImagePrompt } from '@/lib/prompt-review';
+import { MAX_EDITABLE_PROMPT_CHARS, PROMPT_PROTECTION, reviewedImagePrompt } from '@/lib/prompt-review';
+import { isStructuredImagePrompt } from '@/lib/image-prompt-spec';
 
 export function PromptReviewScreen() {
   const state=usePosterStore();
@@ -34,8 +35,9 @@ export function PromptReviewScreen() {
   },[state.step,state.promptPlan]);
 
   const poster=state.promptPlan?.posters[active];
+  const promptsValid = state.promptPlan?.posters.every((item) => isStructuredImagePrompt(item.finalPrompt)) ?? false;
   const submit = async () => {
-    if (!state.upload || !state.promptPlan || submitting) return;
+    if (!state.upload || !state.promptPlan || !promptsValid || submitting) return;
     setSubmitting(true);
     try {
       await pendingDraft.save({upload:state.upload,referenceImage:state.referenceImage,creativeIdea:state.creativeIdea,keywords:state.keywords,forbiddenWords:state.forbiddenWords,promptPlan:state.promptPlan,originalPrompts:state.originalPrompts});
@@ -48,12 +50,13 @@ export function PromptReviewScreen() {
     {state.step==='preparing'?<div className="review-wait" role="status"><span className="review-spinner"/>正在准备三套设计，不会调用图片模型…</div>:poster&&<>
       <div className="review-tabs" role="tablist" aria-label="设计方案">{state.promptPlan!.posters.map((p,i)=><button type="button" role="tab" key={p.style} aria-selected={i===active} onClick={()=>setActive(i)}>方案 {String.fromCharCode(65+i)}</button>)}</div>
       <h2 className="review-concept">{poster.design?.label||poster.copy.title}</h2><p className="review-concept-note">{poster.design?.concept}</p>
-      <label className="idea-field"><span>方案 {String.fromCharCode(65+active)} 的提示词</span><textarea rows={13} maxLength={8000} value={poster.finalPrompt||''} onChange={e=>state.editPrompt(active,e.target.value)}/></label>
-      <div className="review-edit-bar"><span>{(poster.finalPrompt||'').length}/8000</span><button className="text-button" type="button" onClick={()=>state.editPrompt(active,state.originalPrompts[active]||'')}>恢复模型原稿</button></div>
+      <label className="idea-field"><span>方案 {String.fromCharCode(65+active)} 的提示词</span><textarea rows={9} maxLength={MAX_EDITABLE_PROMPT_CHARS} value={poster.finalPrompt||''} onChange={e=>state.editPrompt(active,e.target.value)}/></label>
+      <div className="review-edit-bar"><span>{(poster.finalPrompt||'').length}/{MAX_EDITABLE_PROMPT_CHARS}</span><button className="text-button" type="button" onClick={()=>state.editPrompt(active,state.originalPrompts[active]||'')}>恢复模型原稿</button></div>
       <details className="prompt-details"><summary>固定主体保护要求</summary><p>{PROMPT_PROTECTION}</p></details>
       <details className="prompt-details"><summary>查看将提交的完整提示词</summary><p>{reviewedImagePrompt(poster.finalPrompt||'')}</p></details>
+      {!promptsValid && <p className="save-error" role="alert">请保留提示词的八个栏目：任务、主体、构图、视觉语言、颜色与光线、准确文字、保留、输出。</p>}
       <p className="library-notice" role="status">{saved}</p>{state.error&&<p className="save-error" role="alert">{state.error}</p>}
-      <button className="primary-button" type="button" disabled={submitting||!state.promptPlan!.posters.every(p=>p.finalPrompt?.trim())} onClick={()=>void submit()}>{submitting?'正在提交…':`按当前提示词生成 ${state.promptPlan!.posters.length} 张`}</button>
+      <button className="primary-button" type="button" disabled={submitting||!promptsValid} onClick={()=>void submit()}>{submitting?'正在提交…':`按当前提示词生成 ${state.promptPlan!.posters.length} 张`}</button>
     </>}
     <button className="text-button" type="button" onClick={state.goBack}>返回修改照片与想法</button>
   </section></main>;

@@ -3,6 +3,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createEmptyDraft, type ImageAsset, type ResearchSummary } from '@/domain/project';
 import { buildPosterPrompt, IMAGE_FORMAT_ERROR } from '@/server/ai/image-provider';
+import { formatDesignedImagePrompt } from '@/lib/image-prompt-spec';
 import type { ImageBeautifier } from '@/server/ai/image-provider';
 import type { Provider } from '@/server/ai/provider';
 import type { QualityChecker } from '@/server/ai/quality-provider';
@@ -464,9 +465,33 @@ describe('generatePosters use case', () => {
 
 
 describe('single poster revision and real phases', () => {
+  it('keeps the text model designed prompt for review instead of rebuilding it from design JSON', async () => {
+    const source = generatedResult();
+    source.posters.forEach((poster, index) => { poster.finalPrompt = [
+      '任务：为手作创作者制作一张 3:4 小红书微海报。',
+      `主体：第${index + 1}套真实针织玩偶。`,
+      '构图：主体靠左，右侧留白。',
+      '视觉语言：真实摄影海报。',
+      '颜色与光线：深蓝与浅金，柔和侧光。',
+      `准确文字：标题「${poster.copy.title}」；短句「${poster.copy.description}」；标签「${poster.copy.tags.join(' ')}」。只出现这些文字。`,
+      '保留：原图玩偶身份和关键细节。',
+      '输出：3:4 竖版，主体和文字清楚完整。'
+    ].join('\n'); });
+    const result = await generatePosters(input(), { designOnly: true, dependencies: dependencies({ getProvider: () => ({ generate: async () => source }) }) });
+    expect(result.posters.map((poster) => poster.finalPrompt)).toEqual(source.posters.map((poster) => poster.finalPrompt));
+    expect(result.posters[0].finalPrompt).not.toContain('本组其他方案的设计摘要');
+  });
   it('prepares prompts without creating or calling the image provider', async () => {
     const getImageProvider = vi.fn();
-    const result = await generatePosters(input(), {designOnly:true,dependencies:dependencies({getImageProvider})});
+    const source = generatedResult();
+    source.posters.forEach((poster, index) => { poster.finalPrompt = formatDesignedImagePrompt({
+      subject: '原图中的真实针织兔子，保留长耳朵和开衫',
+      composition: `第 ${index + 1} 套独立构图，主体与文字分开`,
+      visualLanguage: '真实针织质感的摄影海报',
+      colorLighting: '蓝色与暖白，柔和侧光',
+      preserve: '保留原图玩偶身份、姿态和关键细节'
+    }, poster.copy) ?? undefined; });
+    const result = await generatePosters(input(), {designOnly:true,dependencies:dependencies({getImageProvider,getProvider:()=>({generate:async()=>source})})});
     expect(getImageProvider).not.toHaveBeenCalled();
     expect(result.posters).toHaveLength(3);
     expect(result.posters.every(poster=>poster.finalPrompt?.trim())).toBe(true);
@@ -484,7 +509,7 @@ describe('single poster revision and real phases', () => {
     expect(result.posters[0].finalPrompt).toContain('用户编辑：背景使用宝蓝色');
     expect(result.posters[0].finalPrompt).toBe(buildPosterPrompt(beautify.mock.calls[0][0].poster));
   });
-  it('passes other sanitized concepts to each image request and records them in its actual prompt', async () => {
+  it('does not copy the other schemes into one image request', async () => {
     const source = generatedResult();
     source.posters.forEach((poster, index) => { poster.design = { ...poster.design!, concept: ['折纸建筑', '深蓝剧场', '图形拼贴'][index], layout: ['左侧小主体', '右侧中主体', '下方大主体'][index] }; });
     const beautify = vi.fn().mockImplementation(async ({ image }) => image);
@@ -492,7 +517,8 @@ describe('single poster revision and real phases', () => {
     const first = beautify.mock.calls[0][0].poster;
     expect(first.alternatives.map((other: { concept: string }) => other.concept)).toEqual(['深蓝剧场', '图形拼贴']);
     expect(result.posters[0].finalPrompt).toBe(buildPosterPrompt(first));
-    expect(result.posters[0].finalPrompt).toContain('本组其他方案的设计摘要');
+    expect(result.posters[0].finalPrompt).not.toContain('右侧中主体');
+    expect(result.posters[0].finalPrompt).not.toContain('下方大主体');
   });
   it('renders only the requested slot and records the actual sanitized image prompt', async () => {
     const beautify = vi.fn().mockImplementation(async ({ image }) => ({ ...image, dataUrl: 'data:image/png;base64,AAAA', source: 'beautified' }));

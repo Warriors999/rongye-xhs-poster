@@ -41,6 +41,41 @@ const completion = {
 };
 
 describe('GeminiProvider', () => {
+  it('preserves the text model designed prompt fields as a readable image prompt', async () => {
+    const posters = completion.posters.map((poster, index) => ({ ...poster, imagePrompt: {
+      subject: `原图中的第 ${index + 1} 只针织兔子，保持原有外形`,
+      composition: '主体靠左，右上方留出标题空间',
+      visualLanguage: '真实针织质感的摄影海报',
+      colorLighting: '深蓝与浅金，柔和侧光',
+      preserve: '保留原图兔子的朝向、针织纹理和配件位置'
+    } }));
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ ...completion, posters }) }] } }] }), { status: 200 }));
+    const provider = new GeminiProvider({ env: { AI_VISION_BASE_URL: 'https://apinebula.example', AI_VISION_API_KEY: 'vision-secret', AI_VISION_MODEL: 'gemini-3.1-flash-lite' }, fetchImpl });
+    const result = await provider.generate(input, { requireDesignedPrompt: true });
+    expect(result.posters[0].finalPrompt).toContain('主体：原图中的第 1 只针织兔子');
+    expect(result.posters[0].finalPrompt).toContain('准确文字：标题「软乎乎的春天」');
+  });
+
+  it('retries malformed text-model output and rejects plans without designed prompts', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(completion) }] } }] }), { status: 200 }));
+    const provider = new GeminiProvider({ env: { AI_VISION_BASE_URL: 'https://apinebula.example', AI_VISION_API_KEY: 'vision-secret', AI_VISION_MODEL: 'gemini-3.1-flash-lite' }, fetchImpl });
+    await expect(provider.generate(input, { requireDesignedPrompt: true })).rejects.toThrow('生成结果格式异常');
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses the text model prompt details as image recognition when its separate analysis field is absent', async () => {
+    const posters = completion.posters.map((poster) => ({ ...poster, imagePrompt: {
+      subject: '原图中的奶白色针织兔子和开衫', composition: '主体靠左，右侧留白',
+      visualLanguage: '真实针织质感的摄影海报', colorLighting: '深蓝背景，柔和侧光',
+      preserve: '保留兔子原有脸部和开衫纽扣'
+    } }));
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ posters }) }] } }] }), { status: 200 }));
+    const provider = new GeminiProvider({ env: { AI_VISION_BASE_URL: 'https://apinebula.example', AI_VISION_API_KEY: 'vision-secret', AI_VISION_MODEL: 'gemini-3.1-flash-lite' }, fetchImpl });
+    const result = await provider.generate(input, { requireDesignedPrompt: true });
+    expect(result.analysis.subject).toBe('原图中的奶白色针织兔子和开衫');
+    expect(result.analysis.material).toBe('真实针织质感的摄影海报');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
   it('calls the native Gemini endpoint with inline image data and parses JSON text', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       candidates: [{ content: { parts: [{ text: JSON.stringify(completion) }] } }]

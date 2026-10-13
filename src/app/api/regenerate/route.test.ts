@@ -21,7 +21,7 @@ it('creates a single-slot task from fresh saved input without requiring an old t
   expect(task?.result?.posters.map((poster) => poster.style)).toEqual(['story']);
   const status = await GET(new Request(`http://localhost/api/tasks/${taskId}`), { params: Promise.resolve({ taskId }) });
   const body = await status.json();
-  expect(body.result.posters[0].finalPrompt).toContain('完整的 3:4');
+  expect(body.result.posters[0].finalPrompt).toContain('任务：为手作创作者制作一张 3:4');
 });
 it('requires a chosen target and rejects malformed selected copy', async () => {
   const { targetStyle: _style, ...missing } = fields;

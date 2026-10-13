@@ -1,4 +1,5 @@
 import { buildGenerationPrompt } from '@/lib/prompts';
+import { formatDesignedImagePrompt } from '@/lib/image-prompt-spec';
 import { resolveDesignBrief, sanitizeDesignText } from '@/lib/design-system';
 import { createEmptyDraft, type ImageAsset, type PosterDirection } from '@/domain/project';
 import { generateResponseSchema, type GenerateResponse } from './contracts';
@@ -305,12 +306,18 @@ function normalizeResponse(value: unknown, image: ImageAsset, research: Generati
     slots[slot] = candidate;
   }
 
+  const firstCandidate = candidates.find((candidate) => recordValue(recordValue(candidate).imagePrompt).subject);
+  const firstPrompt = recordValue(recordValue(firstCandidate).imagePrompt);
+  const recognizedSubject = sanitizeDesignText(firstPrompt.subject, '');
+  const recognizedColor = sanitizeDesignText(firstPrompt.colorLighting, '');
+  const recognizedMaterial = sanitizeDesignText(firstPrompt.visualLanguage, '');
+  const recognizedDetails = sanitizeDesignText(firstPrompt.preserve, '');
   const fallbackColors = ['以图片为准'];
   const analysis = {
-    subject: asString(analysisRecord.subject ?? analysisRecord.name, '图片中的针织玩偶'),
-    colors: asStringArray(analysisRecord.colors ?? analysisRecord.color, fallbackColors, MAX_TAG_LENGTH),
-    material: asString(analysisRecord.material, '针织纹理（以图片为准）'),
-    details: asStringArray(analysisRecord.details ?? analysisRecord.detail, ['保留主体轮廓和关键配件'])
+    subject: asString(analysisRecord.subject ?? analysisRecord.name ?? recognizedSubject, '图片中的针织玩偶'),
+    colors: asStringArray(analysisRecord.colors ?? analysisRecord.color ?? recognizedColor, fallbackColors, MAX_TAG_LENGTH),
+    material: asString(analysisRecord.material ?? recognizedMaterial, '针织纹理（以图片为准）'),
+    details: asStringArray(analysisRecord.details ?? analysisRecord.detail ?? recognizedDetails, ['保留主体轮廓和关键配件'])
   };
 
   const targetDirection = targetStyle ? directionForCandidate({ style: targetStyle }) : undefined;
@@ -328,15 +335,14 @@ function normalizeResponse(value: unknown, image: ImageAsset, research: Generati
     const design = resolveDesignBrief(direction, candidate.design ?? candidate.brief, cloneResearchSummary(research));
     const fallbackTags = index === 0 ? ['#针织玩偶'] : index === 1 ? ['#针织玩偶', '#手作日常'] : ['#针织玩偶', '#可爱种草'];
     const tags = asTags(candidateCopy.tags ?? candidateCopy.tag, fallbackTags);
+    const copy = { title, description, tags };
+    const finalPrompt = formatDesignedImagePrompt(candidate.imagePrompt, copy);
     return {
       ...draft,
       style: direction,
       image: { ...image },
-      copy: {
-        title,
-        description,
-        tags
-      },
+      copy,
+      ...(finalPrompt ? { finalPrompt } : {}),
       background: backgrounds[index],
       design,
       designNote: sanitizeDesignText(candidate.designNote, DEFAULT_DESIGN_NOTE, MAX_TEXT_LENGTH),
@@ -418,7 +424,9 @@ export class GeminiProvider implements Provider {
         const envelope = JSON.parse(result.bodyText) as GeminiEnvelope;
         const text = envelope.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('').trim();
         if (!text) throw new Error(GENERATION_FORMAT_ERROR);
-        return normalizeResponse(parseJsonObject(text), input.image, research, input.targetStyle);
+        const normalized = normalizeResponse(parseJsonObject(text), input.image, research, input.targetStyle);
+        if (options.requireDesignedPrompt && normalized.posters.some((poster) => !poster.finalPrompt)) throw new Error(GENERATION_FORMAT_ERROR);
+        return normalized;
       } catch (error) {
         if (options.signal?.aborted) throw error;
         if (formatAttempt < MAX_FORMAT_RETRIES) continue;

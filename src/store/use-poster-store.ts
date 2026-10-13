@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { CopyGenerationResult, ImageAsset, GenerationResult, PosterDraft, WizardStep } from '@/domain/project';
 import type { SavedProject } from '@/lib/projects/project-library';
+import { MAX_EDITABLE_PROMPT_CHARS } from '@/lib/prompt-review';
 
 export function cloneDraft(draft: PosterDraft): PosterDraft {
   return {
@@ -129,7 +130,7 @@ export const usePosterStore = create<PosterStore>((set) => ({
   ...initialState,
   startDesign: () => set((state) => state.upload && (state.step === 'upload' || state.step === 'review' || state.step === 'choose') ? { step:'preparing',generation:null,promptPlan:null,originalPrompts:[],error:null,selectedDraft:null,copyResult:null,copyError:null,exportResult:null,regenerationTarget:null,revisionPrompt:'' } : state),
   setPromptPlan: (plan) => set((state) => state.step === 'preparing' ? {promptPlan:cloneGeneration(plan),originalPrompts:plan.posters.map((poster)=>poster.finalPrompt ?? ''),step:'review',error:null} : state),
-  editPrompt: (index,prompt) => set((state) => state.promptPlan && state.step === 'review' ? {promptPlan:{...state.promptPlan,posters:state.promptPlan.posters.map((poster,i)=>i===index?{...poster,finalPrompt:prompt.slice(0,8000)}:poster)}} : state),
+  editPrompt: (index,prompt) => set((state) => state.promptPlan && state.step === 'review' ? {promptPlan:{...state.promptPlan,posters:state.promptPlan.posters.map((poster,i)=>i===index?{...poster,finalPrompt:prompt.slice(0,MAX_EDITABLE_PROMPT_CHARS)}:poster)}} : state),
   submitPrompts: () => set((state) => state.step === 'review' && state.promptPlan?.posters.every((poster)=>poster.finalPrompt?.trim()) ? {step:'generating',error:null,regenerationTarget:null,revisionPrompt:''} : state),
   setUpload: (upload) => set({ upload }),
   setReferenceImage: (referenceImage) => set({ referenceImage }),

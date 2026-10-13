@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  approvedPlanSchema,
   generationRequestSchema,
   generateResponseSchema,
   imageAssetSchema,
@@ -8,6 +9,7 @@ import {
   posterStyleSchema,
   researchSummarySchema
 } from '@/server/ai/contracts';
+import { formatDesignedImagePrompt } from '@/lib/image-prompt-spec';
 
 const imageDataUrl = 'data:image/png;base64,AAAA';
 
@@ -56,6 +58,19 @@ const response = {
 };
 
 describe('AI contracts', () => {
+  it('accepts only ordered GPT Image 2.5 prompt sections for reviewed submissions', () => {
+    const poster = response.posters[0];
+    const finalPrompt = formatDesignedImagePrompt({
+      subject: '原图中的针织玩偶，保留原有脸部和配件',
+      composition: '主体靠左，右侧保留标题位置',
+      visualLanguage: '真实针织质感的摄影海报',
+      colorLighting: '深蓝背景，柔和侧光',
+      preserve: '保留原图主体身份、姿态和针织纹理'
+    }, poster.copy)!;
+    const plan = { analysis: response.analysis, research, posters: [{ ...poster, finalPrompt }] };
+    expect(approvedPlanSchema.safeParse(plan).success).toBe(true);
+    expect(approvedPlanSchema.safeParse({ ...plan, posters: [{ ...poster, finalPrompt: '随意拼接的长段落' }] }).success).toBe(false);
+  });
   it('rejects an empty or non-image data URL', () => {
     expect(generationRequestSchema.safeParse({ imageDataUrl: '' }).success).toBe(false);
     expect(generationRequestSchema.safeParse({ imageDataUrl: 'https://example.com/a.png' }).success).toBe(false);

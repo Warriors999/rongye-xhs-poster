@@ -1,6 +1,7 @@
 import { generateResponseSchema, type GenerateResponse } from './contracts';
 import { defaultResearchSummary } from '@/domain/project';
 import type { GenerationInput, Provider } from './provider';
+import { formatDesignedImagePrompt } from '@/lib/image-prompt-spec';
 
 const configs = [
   { style: 'cute' as const, background: '#f8e5df', titleY: 40, descriptionX: 24, stickers: ['✨'] },
@@ -13,10 +14,18 @@ export class MockProvider implements Provider {
     const posters = configs.map((config, index) => {
       const title = index === 0 ? '软乎乎的一天' : index === 1 ? '手作小日常' : '针织小伙伴';
       const description = index === 0 ? '把可爱带在身边。' : index === 1 ? '把温柔放进每一针里。' : '把小小陪伴收进画面。';
+      const copy = { title, description, tags: ['#针织玩偶', index === 1 ? '#手作日常' : '#可爱种草'] };
       return {
         style: config.style,
         image: input.image,
-        copy: { title, description, tags: ['#针织玩偶', index === 1 ? '#手作日常' : '#可爱种草'] },
+        copy,
+        finalPrompt: formatDesignedImagePrompt({
+          subject: '原图中的真实针织玩偶，保留轮廓和针织细节',
+          composition: ['主体靠左，右侧留白放标题', '主体靠右，左侧放短标题', '主体靠下，顶部留白放文字'][index],
+          visualLanguage: ['轻盈的真实摄影海报', '温暖的手作场景摄影', '克制的编辑式摄影海报'][index],
+          colorLighting: ['浅粉与米白，自然柔光', '暖灰与淡绿，窗边侧光', '深蓝与暖白，柔和轮廓光'][index],
+          preserve: '保留玩偶原有外形、姿态、颜色和关键配件'
+        }, copy) ?? undefined,
         background: config.background,
         designNote: '以主体保真为前提，保留清晰留白和简洁信息层级。',
         layers: {

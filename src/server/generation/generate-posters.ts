@@ -2,6 +2,7 @@ import { defaultResearchSummary, createEmptyDraft, type BeautifyMode, type Desig
 import { resolveDesignBrief, sanitizeDesignText } from '@/lib/design-system';
 import { getImageProvider, getProvider, getReferenceResearcher, type GenerationInput, type Provider, type ProviderDependencies } from '@/server/ai/provider';
 import { buildPosterPrompt, IMAGE_FORMAT_ERROR, IMAGE_PROVIDER_UNAVAILABLE_ERROR, isRetryableImageError, type ImageBeautifier } from '@/server/ai/image-provider';
+import { isStructuredImagePrompt } from '@/lib/image-prompt-spec';
 import type { QualityChecker } from '@/server/ai/quality-provider';
 import { consumeRetryBudget, createCombinedSignal, createRetryBudget, throwIfAborted, withDeadline, type AICallOptions } from '@/server/ai/call-options';
 import type { GenerateResponse } from '@/server/ai/contracts';
@@ -349,7 +350,7 @@ export async function generatePosters(input: GeneratePostersInput, options: Gene
   const security = createOutputSecurity(dependencies.env ?? process.env);
   const combined = createCombinedSignal(options.signal, options.timeoutMs ?? DEFAULT_GENERATION_TIMEOUT_MS, '生成服务总超时');
   const signal = combined.signal;
-  const callOptions: AICallOptions = { signal, retryMode: 'business' };
+  const callOptions: AICallOptions = { signal, retryMode: 'business', requireDesignedPrompt: options.designOnly };
 
   try {
     throwIfOperationAborted(signal);
@@ -374,10 +375,13 @@ export async function generatePosters(input: GeneratePostersInput, options: Gene
       : result.posters;
     const preparedPosters = candidates.map((poster) => safePoster(security, input.targetStyle && input.selectedPosterCopy ? { ...poster, copy: input.selectedPosterCopy } : poster, input.image, research));
     if (input.approvedPlan && preparedPosters.some((poster)=>!poster.finalPrompt)) throw new Error('提示词或方案无效，请检查后重试');
-    if (options.designOnly) return {
+    if (options.designOnly) {
+      if (preparedPosters.some((poster) => !isStructuredImagePrompt(poster.finalPrompt))) throw new Error('设计提示词结构无效，请重新设计');
+      return {
       analysis: safeAnalysis(security, result.analysis), research,
-      posters: preparedPosters.map((poster, index) => ({ ...poster, finalPrompt: buildPosterPrompt({ style: poster.style, copy: poster.copy, design: poster.design!, designNote: poster.designNote, alternatives: preparedPosters.filter((_, other) => other !== index).map((other) => other.design!) }) }))
-    };
+      posters: preparedPosters
+      };
+    }
     let imageProvider: ImageBeautifier;
     try {
       imageProvider = createImageProvider(providerDependencies);

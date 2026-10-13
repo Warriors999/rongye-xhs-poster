@@ -1,4 +1,5 @@
 import { buildGenerationPrompt } from '@/lib/prompts';
+import { formatDesignedImagePrompt } from '@/lib/image-prompt-spec';
 import { createEmptyDraft, defaultResearchSummary, type ImageAsset, type PosterDirection } from '@/domain/project';
 import { resolveDesignBrief, sanitizeDesignText } from '@/lib/design-system';
 import { generateResponseSchema, type GenerateResponse } from './contracts';
@@ -108,13 +109,16 @@ function normalizePosters(value: unknown, image: ImageAsset, research: Generatio
     const title = asCopyText(candidateCopy.title, fallbackTitle, MAX_COPY_TITLE_LENGTH);
     const description = asCopyText(candidateCopy.description, fallbackDescription, MAX_COPY_DESCRIPTION_LENGTH);
     const tags = asTags(candidateCopy.tags ?? candidateCopy.tag, index === 1 ? ['#针织玩偶', '#手作日常'] : index === 2 ? ['#针织玩偶', '#可爱种草'] : ['#针织玩偶']);
+    const copy = { title, description, tags };
+    const finalPrompt = formatDesignedImagePrompt(candidate.imagePrompt, copy);
     return {
       ...fallback,
       ...candidate,
       style: direction,
       image: { ...image },
       background: asBackground(candidate.background, fallback.background),
-      copy: { title, description, tags },
+      copy,
+      finalPrompt: finalPrompt ?? undefined,
       design: resolveDesignBrief(direction, candidate.design ?? candidate.brief, cloneResearchSummary(research)),
       designNote: asDesignNote(candidate.designNote),
       layers: {
@@ -216,7 +220,9 @@ export class OpenAICompatibleProvider implements Provider {
       try {
         const content = envelope?.choices?.[0]?.message?.content;
         const value = typeof content === 'string' ? JSON.parse(content) : content;
-        return generateResponseSchema.parse(normalizePosters(withLegacyDefaults(value), input.image, input.research, input.targetStyle));
+        const normalized = generateResponseSchema.parse(normalizePosters(withLegacyDefaults(value), input.image, input.research, input.targetStyle));
+        if (options.requireDesignedPrompt && normalized.posters.some((poster) => !poster.finalPrompt)) throw new Error(GENERATION_FORMAT_ERROR);
+        return normalized;
       } catch {
         if (formatAttempt < MAX_FORMAT_RETRIES) continue;
         throw new Error(GENERATION_FORMAT_ERROR);
