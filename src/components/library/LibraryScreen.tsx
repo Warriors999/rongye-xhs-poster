@@ -35,9 +35,9 @@ export function LibraryScreen({ onClose, onOpen }: { onClose: () => void; onOpen
     <main className="app-shell library-shell">
       <section className="choose-card" aria-labelledby="library-title">
         <div className="choose-heading"><div><p className="kicker">留住喜欢的创作</p><h1 id="library-title">我的作品</h1></div><button className="text-button" type="button" onClick={onClose}>返回创作</button></div>
-        <p className="library-notice">作品仅保存在此浏览器，最多保留 12 个。打开后可下载、调整或查看提示词。</p>
+        <p className="library-notice">最近一次结果会自动暂存在此浏览器。以前手动保存的作品仍可查看；清除浏览器数据后无法恢复。</p>
         {error && <p className="save-error" role="alert">{error}</p>}
-        {loading ? <p className="library-empty" role="status">正在打开作品库…</p> : projects.length === 0 ? <div className="library-empty"><img className="library-empty-image" src="/visuals/editorial.webp" alt="新生成的针织玩偶创作灵感" /><h2>还没有保存的作品</h2><p>生成海报后，点击「保存到作品库」，下次就能在这里找到。</p><button className="primary-button" type="button" onClick={onClose}>去创作一张</button></div> : <div className="library-grid">
+        {loading ? <p className="library-empty" role="status">正在打开作品库…</p> : projects.length === 0 ? <div className="library-empty"><img className="library-empty-image" src="/visuals/editorial.webp" alt="新生成的针织玩偶创作灵感" /><h2>还没有保存的作品</h2><p>生成完成后，最近一次结果会自动出现在这里。</p><button className="primary-button" type="button" onClick={onClose}>去创作一张</button></div> : <div className="library-grid">
           {projects.map((project) => <article className="library-card" key={project.id}>
             <button className="poster-select-button" type="button" aria-label={`打开${project.title}`} onClick={() => { restoreProject(project); onOpen?.(project); onClose(); }}>
               <img className="library-thumb" src={project.generation.posters[0]?.image.dataUrl || project.upload.dataUrl} alt={project.title} />

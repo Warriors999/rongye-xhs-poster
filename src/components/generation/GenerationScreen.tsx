@@ -133,6 +133,9 @@ export function GenerationScreen() {
   const failGeneration = usePosterStore((state) => state.failGeneration);
   const startGeneration = usePosterStore((state) => state.startGeneration);
   const goBack = usePosterStore((state) => state.goBack);
+  const confirmBack = () => {
+    if (window.confirm('图片任务已经提交。返回后将停止等待，服务端可能继续处理。确定返回吗？')) goBack();
+  };
   const [phaseIndex, setPhaseIndex] = useState(0);
   const shownPhases = regenerationTarget ? phases.map((phase, index) => index === 3 ? '正在调整这一张的设计' : index === 4 ? '正在重做这张海报' : phase) : phases;
   const inputRef = useRef<{ upload: ImageAsset; keywords: string; forbiddenWords: string; creativeIdea: string; referenceImage: ImageAsset | null; target: PosterDraft | null; revisionPrompt: string } | null>(null);
@@ -234,7 +237,7 @@ export function GenerationScreen() {
             </li>
           ))}
         </ol>
-        <button className="secondary-button generation-back-button" type="button" onClick={goBack}>返回修改</button>
+        <button className="secondary-button generation-back-button" type="button" onClick={confirmBack}>返回修改</button>
       </section>
     </main>
   );

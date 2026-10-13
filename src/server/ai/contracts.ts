@@ -102,7 +102,7 @@ export const copyVariantSchema = z.object({
 });
 
 export const copyGenerationResponseSchema = z.object({
-  variants: z.array(copyVariantSchema).min(1).max(3)
+  variants: z.array(copyVariantSchema).length(3)
 });
 
 const textLayerSchema = z.object({
@@ -200,11 +200,13 @@ export const copyGenerationRequestSchema = z.object({
   originalImageDataUrl: imageDataUrlSchema,
   originalWidth: boundedDimension,
   originalHeight: boundedDimension,
-  posterImageDataUrl: imageDataUrlSchema,
-  posterWidth: boundedDimension,
-  posterHeight: boundedDimension,
-  selectedStyle: posterStyleSchema,
-  selectedPosterCopy: copyDataSchema,
+  posters: z.array(z.object({
+    imageDataUrl: imageDataUrlSchema,
+    width: boundedDimension,
+    height: boundedDimension,
+    style: posterStyleSchema,
+    copy: copyDataSchema
+  })).min(1).max(3),
   keywords: z.string().max(500).default(''),
   creativeIdea: z.string().max(500).default(''),
   prompt: z.string().max(500).default('')

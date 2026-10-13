@@ -72,6 +72,20 @@ function dependencies(overrides: Partial<GeneratePostersDependencies> = {}): Gen
 }
 
 describe('generatePosters use case', () => {
+  it('limits simultaneous image requests to two while preserving three outputs', async () => {
+    let active = 0;
+    let maximum = 0;
+    const imageProvider: ImageBeautifier = { async beautify({ image }) {
+      active += 1;
+      maximum = Math.max(maximum, active);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      active -= 1;
+      return { ...image, source: 'beautified' };
+    } };
+    const result = await generatePosters(input(), { dependencies: dependencies({ getImageProvider: () => imageProvider }) });
+    expect(maximum).toBe(2);
+    expect(result.posters).toHaveLength(3);
+  });
   it('runs research, brief generation and parallel image generation without HTTP objects', async () => {
     const order: string[] = [];
     let receivedResearch: ResearchSummary | undefined;

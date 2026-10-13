@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   approvedPlanSchema,
+  copyGenerationResponseSchema,
   generationRequestSchema,
   generateResponseSchema,
   imageAssetSchema,
@@ -58,6 +59,11 @@ const response = {
 };
 
 describe('AI contracts', () => {
+  it('requires exactly three alternative captions for the image group', () => {
+    const variant = { angle: '日常', title: '针织兔子', body: '这一组记录。', tags: ['#手作'] };
+    expect(copyGenerationResponseSchema.safeParse({ variants: [variant, variant, variant] }).success).toBe(true);
+    expect(copyGenerationResponseSchema.safeParse({ variants: [variant] }).success).toBe(false);
+  });
   it('accepts only ordered GPT Image 2.5 prompt sections for reviewed submissions', () => {
     const poster = response.posters[0];
     const finalPrompt = formatDesignedImagePrompt({

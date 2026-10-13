@@ -16,12 +16,14 @@
 .rongye-app .secondary-button:hover { background:#e4e1da; }
 .rongye-app .text-button { min-height:44px; font-size:14px; color:var(--accent-ink); background:transparent; }
 .rongye-app .app-header { position:sticky; top:0; z-index:30; padding-top:env(safe-area-inset-top); background:rgb(247 246 242 / 85%); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px); }
-.rongye-app .app-header-inner { max-width:980px; margin:auto; padding:10px 22px; display:flex; align-items:center; justify-content:space-between; gap:18px; }
+.rongye-app .app-header-inner { max-width:980px; margin:auto; padding:10px 22px; display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:12px; }
+.rongye-app .app-back { width:max-content; min-height:44px; display:flex; align-items:center; gap:3px; padding:0 5px 0 0; background:transparent; color:var(--accent-ink); font-size:14px; font-weight:600; }
+.rongye-app .app-header-note { justify-self:end; }
 .rongye-app .app-brand { padding:0; background:transparent; }
 .brand-mark { display:flex; align-items:center; justify-content:center; gap:8px; color:#493c39; font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif; font-size:34px; font-weight:800; letter-spacing:.08em; }
-.brand-mark-dot { width:10px; height:10px; flex:0 0 10px; background:#d87568; border-radius:50% 50% 50% 0; transform:rotate(-45deg); }
+.brand-mark-symbol { display:block; width:34px; height:34px; flex:0 0 34px; }
 .rongye-app .app-brand .brand-mark { font-size:21px; }
-.rongye-app .app-brand .brand-mark-dot { width:8px; height:8px; flex-basis:8px; }
+.rongye-app .app-brand .brand-mark-symbol { width:25px; height:25px; flex-basis:25px; }
 .rongye-app .app-header-note { color:#82746a; font-size:9px; letter-spacing:.13em; }
 .rongye-app .app-tabbar { position:fixed; bottom:calc(12px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%); width:min(calc(100% - 56px),330px); z-index:50; padding:5px; border:1px solid rgb(255 255 255 / 90%); border-radius:999px; background:rgb(250 249 247 / 84%); box-shadow:0 8px 32px #493c391b,0 0 0 1px #302a2708; backdrop-filter:blur(26px) saturate(1.35); -webkit-backdrop-filter:blur(26px) saturate(1.35); }
 .rongye-app .app-tabbar > div { display:flex; gap:3px; }
@@ -141,16 +143,28 @@
 .rongye-app .choose-actions { display:flex; flex-wrap:wrap; gap:9px; margin:22px 0 0; }
 .rongye-app .choose-actions button { flex:1; min-width:170px; }
 .rongye-app .choose-card .privacy-note { font-size:12px; color:#887660; margin-top:20px; }
+.rongye-app .missing-posters { margin:15px 0; padding:16px; border:1px solid #e5d6b6; border-radius:19px; background:#faf4e7; }
+.rongye-app .missing-posters p { margin:0 0 10px; color:#705d42; font-size:13px; }
+.rongye-app .missing-posters button { min-height:44px; }
 .rongye-app .copy-card { max-width:640px; margin:auto; }
 .rongye-app .copy-thumbnails { display:flex; gap:7px; }
 .rongye-app .copy-thumbnails img { width:36px; height:48px; border-radius:10px; object-fit:cover; }
+.rongye-app .copy-select-grid { border:0; margin:22px 0; padding:0; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; }
+.rongye-app .copy-select-grid legend { font-size:14px; font-weight:600; color:#584b40; padding-bottom:11px; }
+.rongye-app .copy-select-option { position:relative; min-width:0; padding:7px; display:flex; flex-direction:column; gap:7px; align-items:center; border:1px solid #e7dfd5; border-radius:17px; background:#fff; color:#665950; cursor:pointer; }
+.rongye-app .copy-select-option:has(input:checked) { border-color:#ae654e; box-shadow:0 0 0 1px #ae654e; }
+.rongye-app .copy-select-option input { position:absolute; right:12px; top:12px; width:19px; height:19px; accent-color:#a45643; }
+.rongye-app .copy-select-option img { display:block; width:100%; aspect-ratio:3/4; object-fit:cover; border-radius:11px; background:#f1ece5; }
+.rongye-app .copy-select-option span { font-size:12px; font-weight:600; }
 .rongye-app .field-label { display:block; font-size:15px; color:#675340; margin-bottom:11px; }
 .rongye-app .copy-prompt-input { width:100%; border:1px solid #e8dfd2; border-radius:21px; background:#fff; padding:17px; font-size:16px; min-height:140px; line-height:1.7; }
 .rongye-app .copy-generate-button { margin-top:16px; }
 .rongye-app .copy-results { display:grid; gap:17px; margin-top:24px; }
 .rongye-app .copy-option { background:#fff; border:0; border-radius:25px; padding:23px; }
-.rongye-app .copy-option h2 { font-size:23px; color:#4f3927; margin:16px 0; }
-.rongye-app .copy-option > p { font-size:16px; color:#78654e; line-height:1.8; white-space:pre-wrap; }
+.rongye-app .copy-option.selected { box-shadow:0 0 0 2px #a45643; }
+.rongye-app .copy-option-choice { width:100%; display:flex; flex-direction:column; align-items:stretch; gap:13px; padding:0; background:transparent; text-align:left; }
+.rongye-app .copy-option-choice strong { font-size:23px; color:#4f3927; line-height:1.35; }
+.rongye-app .copy-option-body { font-size:16px; color:#78654e; line-height:1.8; white-space:pre-wrap; }
 .rongye-app .copy-option-topline { display:flex; justify-content:space-between; font-size:12px; color:#927558; }
 .rongye-app .copy-tags { display:flex; flex-wrap:wrap; gap:7px; }
 .rongye-app .copy-tags span { padding:6px 9px; border-radius:8px; background:#f4f0e7; color:#82664b; font-size:11px; }

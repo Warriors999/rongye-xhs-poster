@@ -44,6 +44,27 @@ describe('CopyScreen', () => {
     expect(screen.getByRole('button', { name: '生成小红书文案' })).toBeInTheDocument();
   });
 
+  it('selects all three posters by default and sends them together for one post', async () => {
+    const first = generation.posters[0]!;
+    usePosterStore.setState({ selectedDraft: null, generation: { ...generation, posters: [
+      { ...first, style: 'lifestyle', image: { ...first.image, id: 'first', dataUrl: 'data:image/png;base64,FIRST' } },
+      first,
+      { ...first, style: 'editorial', image: { ...first.image, id: 'third', dataUrl: 'data:image/png;base64,THIRD' } }
+    ] } });
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ variants: [
+      { angle: '合集', title: '三张一起发', body: '这一组记录。', tags: ['#手作'] },
+      { angle: '手作', title: '一起看玩偶', body: '不同画面，同一份喜欢。', tags: ['#针织'] },
+      { angle: '分享', title: '今天的小兔子', body: '把可爱分享给你。', tags: ['#日常'] }
+    ] }), { status: 200 }));
+    render(<CopyScreen />);
+    expect(screen.getAllByRole('checkbox')).toHaveLength(3);
+    expect(screen.getAllByRole('checkbox').every((checkbox) => (checkbox as HTMLInputElement).checked)).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: '生成小红书文案' }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+    const form = vi.mocked(fetch).mock.calls[0][1]?.body as FormData;
+    expect(JSON.parse(String(form.get('posters')))).toHaveLength(3);
+  });
+
   it('aborts a departing request and ignores its late response after opening another poster', async () => {
     let finish: (response: Response) => void = () => undefined;
     vi.mocked(fetch).mockImplementation(() => new Promise<Response>((resolve) => { finish = resolve; }));
@@ -62,7 +83,7 @@ describe('CopyScreen', () => {
     expect(screen.queryByText('旧海报文案')).not.toBeInTheDocument();
   });
 
-  it('sends both images only after explicit confirmation and renders the returned options', async () => {
+  it('sends the selected images only after explicit confirmation and renders the returned options', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
       variants: [
         { angle: '陪伴感', title: '窗边有个软乎乎的朋友', body: '把温柔收进手里。', tags: ['#针织玩偶'] },
@@ -80,9 +101,13 @@ describe('CopyScreen', () => {
     const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
     const form = init.body as FormData;
     expect(form.get('originalImageDataUrl')).toBe(upload.dataUrl);
-    expect(form.get('posterImageDataUrl')).toBe('data:image/png;base64,POSTER');
+    expect(JSON.parse(String(form.get('posters')))[0].imageDataUrl).toBe('data:image/png;base64,POSTER');
     expect(form.get('prompt')).toBe('像朋友分享，不要营销腔');
-    expect(screen.getAllByRole('button', { name: /复制这组文案/ })).toHaveLength(3);
+    expect(screen.getAllByRole('button', { name: /选择文案方案/ })).toHaveLength(3);
+    const copySelected = screen.getByRole('button', { name: '复制选中文案' });
+    expect(copySelected).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '选择文案方案 B' }));
+    expect(copySelected).toBeEnabled();
   });
 
   it('keeps the selected poster flow intact when copy generation fails', async () => {

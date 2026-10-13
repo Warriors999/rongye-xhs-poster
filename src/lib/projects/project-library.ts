@@ -3,6 +3,7 @@ import { cloneDraft, cloneGeneration } from '@/store/use-poster-store';
 import { imageSourceToDataUrl } from './image-source';
 
 export const MAX_SAVED_PROJECTS = 12;
+export const LATEST_AUTO_RESULT_ID = 'latest-auto-result';
 
 export interface ProjectSnapshotInput {
   upload: ImageAsset | null;
@@ -14,6 +15,8 @@ export interface ProjectSnapshotInput {
   selectedDraft: PosterDraft | null;
   copyPrompt: string;
   copyResult: CopyGenerationResult | null;
+  promptPlan?: GenerationResult | null;
+  originalPrompts?: string[];
 }
 
 export interface SavedProject extends Omit<ProjectSnapshotInput, 'upload' | 'generation'> {
@@ -36,6 +39,8 @@ export async function createProjectSnapshot(input: ProjectSnapshotInput): Promis
   for (const poster of generation.posters) poster.image = await inlineImage(poster.image);
   const selectedDraft = input.selectedDraft ? cloneDraft(input.selectedDraft) : null;
   if (selectedDraft) selectedDraft.image = await inlineImage(selectedDraft.image);
+  const promptPlan = input.promptPlan ? cloneGeneration(input.promptPlan) : null;
+  if (promptPlan) for (const poster of promptPlan.posters) poster.image = await inlineImage(poster.image);
   return {
     version: 1,
     id: crypto.randomUUID(),
@@ -49,7 +54,9 @@ export async function createProjectSnapshot(input: ProjectSnapshotInput): Promis
     generation,
     selectedDraft,
     copyPrompt: input.copyPrompt,
-    copyResult: input.copyResult ? { variants: input.copyResult.variants.map((variant) => ({ ...variant, tags: [...variant.tags] })) } : null
+    copyResult: input.copyResult ? { variants: input.copyResult.variants.map((variant) => ({ ...variant, tags: [...variant.tags] })) } : null,
+    promptPlan,
+    originalPrompts: [...(input.originalPrompts ?? [])]
   };
 }
 
@@ -68,7 +75,16 @@ export function createProjectLibrary(storage: ProjectStorage) {
   };
   return {
     list: async () => { await pending; return (await storage.readAll()).sort((a, b) => b.savedAt - a.savedAt); },
-    save: (project: SavedProject) => mutate((projects) => [project, ...projects.filter((saved) => saved.id !== project.id)].sort((a, b) => b.savedAt - a.savedAt).slice(0, MAX_SAVED_PROJECTS)),
+    save: (project: SavedProject) => mutate((projects) => {
+      const latest = projects.find((saved) => saved.id === LATEST_AUTO_RESULT_ID);
+      const manual = [project, ...projects.filter((saved) => saved.id !== project.id && saved.id !== LATEST_AUTO_RESULT_ID)]
+        .sort((a, b) => b.savedAt - a.savedAt).slice(0, MAX_SAVED_PROJECTS);
+      return latest ? [latest, ...manual] : manual;
+    }),
+    saveLatest: (project: SavedProject) => mutate((projects) => [
+      { ...project, id: LATEST_AUTO_RESULT_ID },
+      ...projects.filter((saved) => saved.id !== LATEST_AUTO_RESULT_ID)
+    ]),
     remove: (id: string) => mutate((projects) => projects.filter((project) => project.id !== id))
   };
 }

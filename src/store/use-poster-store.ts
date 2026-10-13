@@ -80,6 +80,7 @@ export interface PosterStore {
   setReferenceImage: (image: ImageAsset | null) => void;
   setRevisionPrompt: (prompt: string) => void;
   regenerateOne: (draft: PosterDraft, feedback: string) => void;
+  retryMissingPoster: (style: PosterDraft['style']) => void;
   restoreProject: (project: SavedProject) => void;
   setCreativeIdea: (creativeIdea: string) => void;
   setKeywords: (keywords: string) => void;
@@ -88,9 +89,10 @@ export interface PosterStore {
   startGeneration: () => void;
   openCopyComposer: () => void;
   backToChoose: () => void;
+  resumeResults: () => void;
   markExported: () => void;
   setExportResult: (result: { dataUrl: string; filename: string }) => void;
-  setCopyResult: (result: CopyGenerationResult) => void;
+  setCopyResult: (result: CopyGenerationResult | null) => void;
   setCopyError: (message: string) => void;
   clearCopyError: () => void;
   continueEditing: () => void;
@@ -159,6 +161,11 @@ export const usePosterStore = create<PosterStore>((set) => ({
     if (state.step !== 'choose' || !state.upload || !state.generation || !feedback.trim() || !state.generation.posters.some((poster) => poster.style === draft.style)) return state;
     return { step: 'generating', regenerationTarget: cloneDraft(draft), revisionPrompt: feedback.trim(), error: null, promptPlan:null };
   }),
+  retryMissingPoster: (style) => set((state) => {
+    const missing = state.promptPlan?.posters.find((poster) => poster.style === style);
+    if (state.step !== 'choose' || !state.upload || !state.generation || !missing || state.generation.posters.some((poster) => poster.style === style)) return state;
+    return { step: 'generating', regenerationTarget: cloneDraft(missing), revisionPrompt: '', error: null };
+  }),
   restoreProject: (project) => set({
     ...initialState,
     step: 'choose',
@@ -170,21 +177,24 @@ export const usePosterStore = create<PosterStore>((set) => ({
     generation: cloneGeneration(project.generation),
     selectedDraft: project.selectedDraft ? cloneDraft(project.selectedDraft) : null,
     copyPrompt: project.copyPrompt,
-    copyResult: project.copyResult ? cloneCopyResult(project.copyResult) : null
+    copyResult: project.copyResult ? cloneCopyResult(project.copyResult) : null,
+    promptPlan: project.promptPlan ? cloneGeneration(project.promptPlan) : null,
+    originalPrompts: [...(project.originalPrompts ?? [])]
   }),
   openCopyComposer: () =>
     set((state) =>
-      state.step === 'choose' && state.upload && state.selectedDraft
+      state.step === 'choose' && state.upload && state.generation?.posters.length
         ? { step: 'copy', copyError: null }
         : state
     ),
   backToChoose: () =>
     set((state) => (state.step === 'copy' ? { step: 'choose', copyError: null } : state)),
+  resumeResults: () => set((state) => state.step === 'upload' && state.generation ? { step: 'choose', error: null } : state),
   markExported: () =>
     set((state) => (state.step === 'choose' || state.step === 'edit' ? { step: 'exported' } : state)),
   setExportResult: (exportResult) => set({ exportResult }),
   setCopyResult: (copyResult) =>
-    set((state) => (state.step === 'copy' ? { copyResult: cloneCopyResult(copyResult), copyError: null } : state)),
+    set((state) => (state.step === 'copy' ? { copyResult: copyResult ? cloneCopyResult(copyResult) : null, copyError: null } : state)),
   setCopyError: (copyError) => set((state) => (state.step === 'copy' ? { copyError } : state)),
   clearCopyError: () => set({ copyError: null }),
   continueEditing: () => set((state) => (state.step === 'exported' ? { step: 'edit' } : state)),
@@ -204,13 +214,26 @@ export const usePosterStore = create<PosterStore>((set) => ({
         const replacement = generation.posters.find((poster) => poster.style === state.regenerationTarget!.style);
         if (generation.posters.length !== 1 || !replacement) return { step: 'choose', error: '这张海报没有完成重做，请重试', regenerationTarget: null };
         const selectedChanged = state.selectedDraft?.style === replacement.style;
+        const existing = state.generation.posters.some((poster) => poster.style === replacement.style);
+        const order = state.promptPlan?.posters.map((poster) => poster.style) ?? [];
+        const posters = (existing
+          ? state.generation.posters.map((poster) => poster.style === replacement.style ? cloneDraft(replacement) : poster)
+          : [...state.generation.posters, cloneDraft(replacement)]
+        ).sort((a, b) => order.indexOf(a.style) - order.indexOf(b.style));
+        const stillMissing = state.promptPlan?.posters.some((poster) => !posters.some((ready) => ready.style === poster.style)) ?? false;
+        const slotIndex = state.promptPlan?.posters.findIndex((poster) => poster.style === replacement.style) ?? -1;
+        const failedLabel = slotIndex >= 0 ? `动态方案 ${String.fromCharCode(65 + slotIndex)}方向` : '';
         return {
-          generation: { ...state.generation, posters: state.generation.posters.map((poster) => poster.style === replacement.style ? cloneDraft(replacement) : poster) },
+          generation: { ...state.generation, posters, warnings: (state.generation.warnings ?? []).filter((warning) => !failedLabel || !warning.includes(failedLabel)) },
           ...(selectedChanged ? { selectedDraft: cloneDraft(replacement), copyResult: null, copyError: null, exportResult: null } : {}),
-          step: 'choose', error: null, regenerationTarget: null, revisionPrompt: ''
+          step: 'choose', error: null, regenerationTarget: null, revisionPrompt: '',
+          promptPlan: stillMissing ? state.promptPlan : null,
+          originalPrompts: stillMissing ? state.originalPrompts : [],
+          completedPromptPlan: state.promptPlan && !stillMissing ? state.completedPromptPlan + 1 : state.completedPromptPlan
         };
       }
-      return { generation: cloneGeneration(generation), step: 'choose', error: null, promptPlan:null,originalPrompts:[],selectedDraft:null,copyResult:null,copyError:null,exportResult:null,completedPromptPlan:state.promptPlan?state.completedPromptPlan+1:state.completedPromptPlan };
+      const stillMissing = state.promptPlan?.posters.some((poster) => !generation.posters.some((ready) => ready.style === poster.style)) ?? false;
+      return { generation: cloneGeneration(generation), step: 'choose', error: null, promptPlan:stillMissing ? state.promptPlan : null,originalPrompts:stillMissing ? state.originalPrompts : [],selectedDraft:null,copyResult:null,copyError:null,exportResult:null,completedPromptPlan:state.promptPlan&&!stillMissing?state.completedPromptPlan+1:state.completedPromptPlan };
     }),
   selectDraft: (selectedDraft) =>
     set((state) =>
@@ -232,10 +255,10 @@ export const usePosterStore = create<PosterStore>((set) => ({
         if (state.promptPlan) return {step:'review',error:null};
         return { step: 'upload', generation: null, selectedDraft: null, copyResult: null, copyError: null, exportResult: null };
       }
-      if (state.step === 'copy') return { step: 'choose', copyResult: null, copyError: null };
+      if (state.step === 'copy') return { step: 'choose', copyError: null };
       if (state.step === 'edit') return { step: 'choose' };
       if (state.step === 'choose') {
-        return { step: 'upload', generation: null, selectedDraft: null, copyResult: null, copyError: null, exportResult: null, error: null };
+        return { step: 'upload', error: null };
       }
       if (state.step === 'exported') {
         return { step: 'upload', generation: null, selectedDraft: null, copyResult: null, copyError: null, exportResult: null, error: null };

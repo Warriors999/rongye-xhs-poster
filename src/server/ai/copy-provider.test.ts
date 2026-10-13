@@ -1,7 +1,9 @@
 // @vitest-environment node
 
 import { describe, expect, it, vi } from 'vitest';
-import { GeminiCopyProvider, OpenAICopyProvider } from './copy-provider';
+import { randomBytes } from 'node:crypto';
+import sharp from 'sharp';
+import { COPY_FORMAT_ERROR, GeminiCopyProvider, OpenAICopyProvider } from './copy-provider';
 
 const input = {
   originalImage: {
@@ -65,11 +67,11 @@ describe('copy providers', () => {
     expect(content[0]?.text).toContain(input.selectedPosterCopy.title);
   });
 
-  it('normalizes alternate fields and replaces unsafe or missing variants with safe copy', async () => {
+  it('rejects an incomplete model response instead of inventing missing choices', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       choices: [{ message: { content: JSON.stringify({
         copies: [
-          { title: '限时特价 99 元', description: '2026 年新品上新', hashtags: ['#品牌'] }
+          { title: '窗边的小兔子', description: '今天的手作记录。', hashtags: ['#针织玩偶'] }
         ]
       }) } }]
     }), { status: 200 }));
@@ -78,17 +80,34 @@ describe('copy providers', () => {
       fetchImpl
     });
 
-    const result = await provider.generate(input);
+    await expect(provider.generate(input)).rejects.toThrow(COPY_FORMAT_ERROR);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
 
-    expect(result.variants).toHaveLength(3);
-    expect(JSON.stringify(result)).not.toMatch(/特价|99|2026|品牌|新品/);
-    expect(result.variants.every((variant) => variant.tags.length > 0)).toBe(true);
+  it('retries when choices repeat the same title and body', async () => {
+    const candidate = { angle: '手作记录', title: '今天的小兔子', body: '把喜欢留在今天。', tags: ['#针织玩偶'] };
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({ variants: [candidate, candidate, candidate] }) } }]
+    }), { status: 200 }));
+    const provider = new OpenAICopyProvider({ env: { AI_BASE_URL: 'https://example.test/v1', AI_API_KEY: 'key', AI_VISION_MODEL: 'vision-model' }, fetchImpl });
+
+    await expect(provider.generate(input)).rejects.toThrow(COPY_FORMAT_ERROR);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves a timeout error so the API can report a retryable timeout', async () => {
+    const fetchImpl = vi.fn(() => new Promise<Response>(() => undefined));
+    const provider = new OpenAICopyProvider({ env: { AI_BASE_URL: 'https://example.test/v1', AI_API_KEY: 'key', AI_VISION_MODEL: 'vision-model' }, fetchImpl, timeoutMs: 5 });
+
+    await expect(provider.generate(input)).rejects.toMatchObject({ name: 'TimeoutError' });
   });
 
   it('uses the native Gemini protocol with two inline image parts', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       candidates: [{ content: { parts: [{ text: JSON.stringify({ variants: [
-        { angle: '陪伴感', title: '软乎乎的陪伴', body: '把喜欢的日常织进一针一线。', tags: ['#针织玩偶'] }
+        { angle: '陪伴感', title: '软乎乎的陪伴', body: '把喜欢的日常织进一针一线。', tags: ['#针织玩偶'] },
+        { angle: '手作记录', title: '一针一线的今天', body: '今天又完成了新的玩偶。', tags: ['#手作'] },
+        { angle: '生活分享', title: '窗边的小伙伴', body: '和小兔子一起度过午后。', tags: ['#日常'] }
       ] }) }] } }]
     }), { status: 200 }));
     const provider = new GeminiCopyProvider({
@@ -106,5 +125,43 @@ describe('copy providers', () => {
     const [, request] = fetchImpl.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(request.body)) as { contents: Array<{ parts: Array<{ inline_data?: { data: string } }> }> };
     expect(body.contents[0]?.parts.filter((part) => part.inline_data).map((part) => part.inline_data?.data)).toEqual(['ORIGINAL', 'POSTER']);
+  });
+
+  it('sends the original plus three selected posters in one Gemini copy request', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ text: JSON.stringify({ variants: [
+        { angle: '合集', title: '三张一起发', body: '三张海报记录同一只玩偶。', tags: ['#针织玩偶'] },
+        { angle: '记录', title: '不同画面里的它', body: '从不同角度看看这只玩偶。', tags: ['#手作'] },
+        { angle: '分享', title: '今天的三幅画面', body: '选了三张图分享今天的手作。', tags: ['#日常'] }
+      ] }) }] } }]
+    }), { status: 200 }));
+    const provider = new GeminiCopyProvider({ env: { AI_VISION_BASE_URL: 'https://apinebula.example', AI_VISION_API_KEY: 'gemini-secret', AI_VISION_MODEL: 'gemini-3.1-flash-lite' }, fetchImpl });
+    const posters = ['lifestyle', 'story', 'editorial'].map((style, index) => ({
+      style: style as 'lifestyle' | 'story' | 'editorial',
+      image: { ...input.posterImage, dataUrl: `data:image/png;base64,POSTER${index}` },
+      copy: input.selectedPosterCopy
+    }));
+    await provider.generate({ ...input, posters });
+    const body = JSON.parse(String(fetchImpl.mock.calls[0][1].body)) as { contents: Array<{ parts: Array<{ inline_data?: { data: string } }> }> };
+    expect(body.contents[0].parts.filter((part) => part.inline_data).map((part) => part.inline_data?.data)).toEqual(['ORIGINAL', 'POSTER0', 'POSTER1', 'POSTER2']);
+  });
+
+  it('shrinks large poster images before forwarding them to the vision model', async () => {
+    const originalBytes = await sharp(randomBytes(720 * 960 * 3), { raw: { width: 720, height: 960, channels: 3 } }).png().toBuffer();
+    const dataUrl = `data:image/png;base64,${originalBytes.toString('base64')}`;
+    const variants = [
+      { angle: '陪伴', title: '窗边的小兔子', body: '它陪我过了一个下午。', tags: ['#针织'] },
+      { angle: '记录', title: '今天完成一只兔子', body: '把今天的手作过程记下来。', tags: ['#手作'] },
+      { angle: '分享', title: '软乎乎的一天', body: '想把这份柔软分享出去。', tags: ['#日常'] }
+    ];
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ variants }) }] } }] }), { status: 200 }));
+    const provider = new GeminiCopyProvider({ env: { AI_VISION_BASE_URL: 'https://example.test', AI_VISION_API_KEY: 'key', AI_VISION_MODEL: 'vision' }, fetchImpl });
+
+    await provider.generate({ ...input, posterImage: { ...input.posterImage, dataUrl } });
+
+    const body = JSON.parse(String(fetchImpl.mock.calls[0][1].body)) as { contents: Array<{ parts: Array<{ inline_data?: { mime_type: string; data: string } }> }> };
+    const sent = body.contents[0].parts.find((part) => part.inline_data?.mime_type === 'image/jpeg')?.inline_data;
+    expect(sent).toBeDefined();
+    expect(Buffer.from(sent!.data, 'base64').length).toBeLessThan(originalBytes.length / 3);
   });
 });

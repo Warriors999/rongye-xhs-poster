@@ -11,7 +11,7 @@ vi.mock('@/lib/export/render-poster', () => ({
 }));
 vi.mock('@/lib/projects/project-library', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/projects/project-library')>();
-  return { ...actual, projectLibrary: { list: vi.fn(), save: vi.fn().mockResolvedValue(undefined), remove: vi.fn() } };
+  return { ...actual, projectLibrary: { list: vi.fn(), save: vi.fn().mockResolvedValue(undefined), saveLatest: vi.fn().mockResolvedValue(undefined), remove: vi.fn() } };
 });
 
 const upload: ImageAsset = {
@@ -78,16 +78,16 @@ describe('ChooseScreen', () => {
     expect(usePosterStore.getState().generation?.posters).toHaveLength(3);
   });
 
-  it('archives the current work without calling a generation endpoint', async () => {
-    vi.mocked(projectLibrary.save).mockClear();
+  it('automatically saves the latest result without a manual button or generation request', async () => {
+    vi.mocked(projectLibrary.saveLatest).mockClear();
     const fetcher = vi.fn();
     vi.stubGlobal('fetch', fetcher);
     render(<ChooseScreen />);
-    fireEvent.click(screen.getByRole('button', { name: '保存到作品库' }));
-    await waitFor(() => expect(projectLibrary.save).toHaveBeenCalledOnce());
-    expect(vi.mocked(projectLibrary.save).mock.calls[0][0].generation.posters).toHaveLength(3);
+    await waitFor(() => expect(projectLibrary.saveLatest).toHaveBeenCalledOnce());
+    expect(vi.mocked(projectLibrary.saveLatest).mock.calls[0][0].generation.posters).toHaveLength(3);
     expect(fetcher).not.toHaveBeenCalled();
-    expect(screen.getByRole('status', { name: '作品保存状态' })).toHaveTextContent('已保存到此浏览器的作品库');
+    expect(screen.getByRole('status', { name: '作品保存状态' })).toHaveTextContent('已自动暂存最近一次结果');
+    expect(screen.queryByRole('button', { name: '保存到作品库' })).not.toBeInTheDocument();
   });
 
   it('shows the actual count and warning when only some posters succeed', async () => {
@@ -105,6 +105,15 @@ describe('ChooseScreen', () => {
     });
 
     await expect.poll(() => screen.getByRole('button', { name: '已发起全部 2 张下载' })).toBeTruthy();
+  });
+
+  it('offers a one-slot retry without rerendering the two successful posters', () => {
+    const ready = generation.posters.filter((poster) => poster.style !== 'story');
+    usePosterStore.setState({ step: 'choose', promptPlan: generation, generation: { ...generation, posters: ready } });
+    render(<ChooseScreen />);
+    fireEvent.click(screen.getByRole('button', { name: '只补生成方案 B' }));
+    expect(usePosterStore.getState().regenerationTarget?.style).toBe('story');
+    expect(usePosterStore.getState().generation?.posters.map((poster) => poster.style)).toEqual(['lifestyle', 'editorial']);
   });
 
   it('shows a retry state without an empty poster list when no posters succeed', () => {
@@ -129,27 +138,24 @@ describe('ChooseScreen', () => {
     expect(usePosterStore.getState().generation).toBeNull();
   });
 
-  it('opens the optional copy page only after a poster is selected', () => {
+  it('opens copy for all generated posters without requiring a single selected card', () => {
     render(<ChooseScreen />);
 
     const copyButton = screen.getByRole('button', { name: '生成小红书文案' });
-    expect(copyButton).toBeDisabled();
-
-    fireEvent.click(screen.getByRole('button', { name: '选择动态方案 B' }));
     expect(copyButton).toBeEnabled();
     fireEvent.click(copyButton);
 
     expect(usePosterStore.getState().step).toBe('copy');
-    expect(usePosterStore.getState().selectedDraft?.style).toBe('story');
+    expect(usePosterStore.getState().generation?.posters).toHaveLength(3);
   });
 
-  it('returns to upload and clears generated research and warnings', () => {
+  it('returns to upload without discarding generated posters', () => {
     render(<ChooseScreen />);
 
     fireEvent.click(screen.getByRole('button', { name: '换一张照片' }));
 
     expect(usePosterStore.getState().step).toBe('upload');
-    expect(usePosterStore.getState().generation).toBeNull();
+    expect(usePosterStore.getState().generation?.posters).toHaveLength(3);
   });
 
   it('downloads the generated image data directly without composing a canvas image', async () => {
@@ -177,7 +183,7 @@ describe('ChooseScreen', () => {
     vi.mocked(saveImage).mockClear();
     const assetPosters = generation.posters.map((poster) => ({ ...poster, image: { ...poster.image, dataUrl: `/api/tasks/task-asset-1?asset=${poster.style}` } }));
     replacePosters(assetPosters);
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new Uint8Array([137, 80, 78, 71]), { status: 200, headers: { 'content-type': 'image/png' } })));
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response(new Uint8Array([137, 80, 78, 71]), { status: 200, headers: { 'content-type': 'image/png' } })));
     render(<ChooseScreen />);
 
     await act(async () => {

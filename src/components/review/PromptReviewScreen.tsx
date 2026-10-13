@@ -51,7 +51,7 @@ export function PromptReviewScreen() {
       <div className="review-tabs" role="tablist" aria-label="设计方案">{state.promptPlan!.posters.map((p,i)=><button type="button" role="tab" key={p.style} aria-selected={i===active} onClick={()=>setActive(i)}>方案 {String.fromCharCode(65+i)}</button>)}</div>
       <h2 className="review-concept">{poster.design?.label||poster.copy.title}</h2><p className="review-concept-note">{poster.design?.concept}</p>
       <label className="idea-field"><span>方案 {String.fromCharCode(65+active)} 的提示词</span><textarea rows={9} maxLength={MAX_EDITABLE_PROMPT_CHARS} value={poster.finalPrompt||''} onChange={e=>state.editPrompt(active,e.target.value)}/></label>
-      <div className="review-edit-bar"><span>{(poster.finalPrompt||'').length}/{MAX_EDITABLE_PROMPT_CHARS}</span><button className="text-button" type="button" onClick={()=>state.editPrompt(active,state.originalPrompts[active]||'')}>恢复模型原稿</button></div>
+      <div className="review-edit-bar"><span>{(poster.finalPrompt||'').length}/{MAX_EDITABLE_PROMPT_CHARS}</span><button className="text-button" type="button" onTouchStart={()=>state.editPrompt(active,state.originalPrompts[active]||'')} onClick={()=>state.editPrompt(active,state.originalPrompts[active]||'')}>恢复模型原稿</button></div>
       <details className="prompt-details"><summary>固定主体保护要求</summary><p>{PROMPT_PROTECTION}</p></details>
       <details className="prompt-details"><summary>查看将提交的完整提示词</summary><p>{reviewedImagePrompt(poster.finalPrompt||'')}</p></details>
       {!promptsValid && <p className="save-error" role="alert">请保留提示词的八个栏目：任务、主体、构图、视觉语言、颜色与光线、准确文字、保留、输出。</p>}

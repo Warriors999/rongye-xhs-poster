@@ -61,6 +61,23 @@ describe('poster store', () => {
     expect(state.step).toBe('choose');
   });
 
+  it('keeps successful posters and fills only the failed slot on demand', () => {
+    const plan = { ...generation, posters: [
+      { ...createEmptyDraft(), style: 'lifestyle' as const },
+      { ...createEmptyDraft(), style: 'story' as const },
+      { ...createEmptyDraft(), style: 'editorial' as const }
+    ] };
+    usePosterStore.setState({ step: 'generating', promptPlan: plan });
+    usePosterStore.getState().setGeneration({ ...generation, posters: [plan.posters[0], plan.posters[2]], warnings: ['动态方案 B方向的海报生成失败，已跳过。'] });
+    expect(usePosterStore.getState().promptPlan?.posters).toHaveLength(3);
+    usePosterStore.getState().retryMissingPoster('story');
+    expect(usePosterStore.getState()).toMatchObject({ step: 'generating', regenerationTarget: { style: 'story' } });
+    usePosterStore.getState().setGeneration({ ...generation, posters: [{ ...plan.posters[1], image: { ...upload, id: 'story-new' } }] });
+    expect(usePosterStore.getState().generation?.posters.map((poster) => poster.style)).toEqual(['lifestyle', 'story', 'editorial']);
+    expect(usePosterStore.getState().generation?.warnings).toEqual([]);
+    expect(usePosterStore.getState().promptPlan).toBeNull();
+  });
+
   it('keeps all previous posters and copy when a single-poster redo fails', () => {
     usePosterStore.getState().startGeneration();
     usePosterStore.getState().setGeneration(generation);
@@ -199,7 +216,10 @@ describe('poster store', () => {
     usePosterStore.getState().setGeneration(generation);
     usePosterStore.getState().goBack();
     expect(usePosterStore.getState().step).toBe('upload');
-    expect(usePosterStore.getState().generation).toBeNull();
+    expect(usePosterStore.getState().generation?.posters).toHaveLength(1);
+    usePosterStore.getState().resumeResults();
+    expect(usePosterStore.getState().step).toBe('choose');
+    usePosterStore.getState().goBack();
     expect(usePosterStore.getState().upload).toEqual(upload);
     expect(usePosterStore.getState().creativeIdea).toBe('保留我的想法');
     expect(usePosterStore.getState().keywords).toBe('兔子');
@@ -212,6 +232,7 @@ describe('poster store', () => {
     usePosterStore.getState().selectDraft(generation.posters[0]);
     usePosterStore.getState().goBack();
     expect(usePosterStore.getState().step).toBe('upload');
+    expect(usePosterStore.getState().generation?.posters).toHaveLength(1);
 
     usePosterStore.getState().startGeneration();
     usePosterStore.getState().setGeneration(generation);

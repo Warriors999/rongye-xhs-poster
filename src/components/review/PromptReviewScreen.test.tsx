@@ -37,4 +37,13 @@ describe('PromptReviewScreen', () => {
     expect(submit).toBeDisabled();
     expect(screen.getByRole('alert')).toHaveTextContent('请保留提示词的八个栏目');
   });
+
+  it('restores the original prompt on the first touch while the editor has focus', () => {
+    render(<PromptReviewScreen />);
+    const editor = screen.getByRole('textbox', { name: '方案 A 的提示词' });
+    fireEvent.change(editor, { target: { value: prompt.replace('构图：', '布局：') } });
+    editor.focus();
+    fireEvent.touchStart(screen.getByRole('button', { name: '恢复模型原稿' }));
+    expect(editor).toHaveValue(prompt);
+  });
 });

@@ -37,7 +37,7 @@ function errorMessageFromBody(body: unknown): string {
 
 export function CopyScreen() {
   const upload = usePosterStore((state) => state.upload);
-  const selectedDraft = usePosterStore((state) => state.selectedDraft);
+  const generation = usePosterStore((state) => state.generation);
   const keywords = usePosterStore((state) => state.keywords);
   const creativeIdea = usePosterStore((state) => state.creativeIdea);
   const copyPrompt = usePosterStore((state) => state.copyPrompt);
@@ -49,6 +49,8 @@ export function CopyScreen() {
   const backToChoose = usePosterStore((state) => state.backToChoose);
   const [busy, setBusy] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [selectedCopyIndex, setSelectedCopyIndex] = useState<number | null>(null);
+  const [selectedStyles, setSelectedStyles] = useState<string[]>(() => generation?.posters.map((poster) => poster.style) ?? []);
   const requestRef = useRef<AbortController | null>(null);
 
   useEffect(() => () => {
@@ -56,32 +58,40 @@ export function CopyScreen() {
     requestRef.current = null;
   }, []);
 
-  if (!upload || !selectedDraft) {
-    return <main className="placeholder-screen"><p>请先选择一张海报</p></main>;
+  if (!upload || !generation?.posters.length) {
+    return <main className="placeholder-screen"><p>请先生成海报</p></main>;
   }
 
+  const selectedPosters = generation.posters.filter((poster) => selectedStyles.includes(poster.style));
+  const togglePoster = (style: string) => {
+    setSelectedStyles((current) => current.includes(style) ? current.filter((item) => item !== style) : [...current, style]);
+    setSelectedCopyIndex(null);
+    setCopyResult(null);
+    setCopyError('');
+  };
+
   const generateCopy = async () => {
-    if (busy) return;
+    if (busy || selectedPosters.length === 0) return;
     setBusy(true);
+    setSelectedCopyIndex(null);
     setCopyError('');
     const controller = new AbortController();
     requestRef.current = controller;
     const currentRequest = () => {
       const state = usePosterStore.getState();
-      return !controller.signal.aborted && requestRef.current === controller && state.step === 'copy' && state.upload?.dataUrl === upload.dataUrl && state.selectedDraft?.image.dataUrl === selectedDraft.image.dataUrl && state.selectedDraft?.style === selectedDraft.style;
+      return !controller.signal.aborted && requestRef.current === controller && state.step === 'copy' && state.upload?.dataUrl === upload.dataUrl && state.generation === generation;
     };
     try {
-      const posterDataUrl = await imageSourceToDataUrl(selectedDraft.image.dataUrl);
+      const posterDataUrls = await Promise.all(selectedPosters.map((poster) => imageSourceToDataUrl(poster.image.dataUrl)));
       if (!currentRequest()) return;
       const form = new FormData();
       form.append('originalImageDataUrl', upload.dataUrl);
       form.append('originalWidth', String(upload.width));
       form.append('originalHeight', String(upload.height));
-      form.append('posterImageDataUrl', posterDataUrl);
-      form.append('posterWidth', String(selectedDraft.image.width));
-      form.append('posterHeight', String(selectedDraft.image.height));
-      form.append('selectedStyle', selectedDraft.style);
-      form.append('selectedPosterCopy', JSON.stringify(selectedDraft.copy));
+      form.append('posters', JSON.stringify(selectedPosters.map((poster, index) => ({
+        imageDataUrl: posterDataUrls[index], width: poster.image.width, height: poster.image.height,
+        style: poster.style, copy: poster.copy
+      }))));
       form.append('keywords', keywords);
       form.append('creativeIdea', creativeIdea);
       form.append('prompt', copyPrompt);
@@ -121,15 +131,19 @@ export function CopyScreen() {
         <div className="copy-heading">
           <div>
             <p className="kicker">可选步骤 · 不生成不收费</p>
-            <h1 id="copy-title">为这张海报写文案</h1>
+            <h1 id="copy-title">为这组海报写文案</h1>
           </div>
           <div className="copy-thumbnails">
             <img src={upload.dataUrl} alt="原始玩偶照片" />
-            <img src={selectedDraft.image.dataUrl} alt="已选中的 AI 海报" />
+            {selectedPosters.map((poster, index) => <img key={poster.style} src={poster.image.dataUrl} alt={`已选中的第 ${index + 1} 张 AI 海报`} />)}
           </div>
         </div>
         <button className="text-button choose-back-button" type="button" onClick={backToChoose}>返回海报选择</button>
-        <p className="copy-intro">AI 会同时看原始玩偶照片和这张海报，再结合你的想法生成 3 组不同方向。你可以保存海报后再决定要不要生成。</p>
+        <p className="copy-intro">默认使用本次全部成图。你可以勾选 1–3 张，让 AI 为这一组图片写一篇可发布的小红书文案，并给出 3 种写法。</p>
+        <fieldset className="copy-select-grid"><legend>选择要一起发布的海报</legend>{generation.posters.map((poster, index) => <label className="copy-select-option" key={poster.style}>
+          <input type="checkbox" checked={selectedStyles.includes(poster.style)} disabled={busy} onChange={() => togglePoster(poster.style)} aria-label={`选择方案 ${String.fromCharCode(65 + index)}`} />
+          <img src={poster.image.dataUrl} alt="" /><span>方案 {String.fromCharCode(65 + index)}</span>
+        </label>)}</fieldset>
         <label className="field-label" htmlFor="copy-prompt">你想让文案怎么写？</label>
         <textarea
           id="copy-prompt"
@@ -140,23 +154,25 @@ export function CopyScreen() {
           placeholder="例如：像朋友分享手作日常，真诚、轻松，有陪伴感，不要营销腔。"
         />
         {copyError && <p className="save-error" role="alert">{copyError}</p>}
-        <button className="primary-button copy-generate-button" type="button" onClick={generateCopy} disabled={busy}>
+        <button className="primary-button copy-generate-button" type="button" onClick={generateCopy} disabled={busy || selectedPosters.length === 0}>
           {busy ? '正在生成 3 组文案…' : copyResult ? '重新生成文案' : '生成小红书文案'}
         </button>
         {copyResult && <div className="copy-results" aria-label="文案结果">
           {copyResult.variants.map((variant, index) => (
-            <article className="copy-option" key={`${variant.angle}-${index}`}>
-              <div className="copy-option-topline"><span>{variant.angle}</span><span>方案 {String.fromCharCode(65 + index)}</span></div>
-              <h2>{variant.title}</h2>
-              <p>{variant.body}</p>
-              <div className="copy-tags">{variant.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
-              <button className="secondary-button copy-copy-button" type="button" onClick={() => void copyVariant(index, variant)}>
-                {copiedIndex === index ? '已复制' : '复制这组文案'}
+            <article className={selectedCopyIndex === index ? 'copy-option selected' : 'copy-option'} key={`${variant.angle}-${index}`}>
+              <button className="copy-option-choice" type="button" aria-label={`选择文案方案 ${String.fromCharCode(65 + index)}`} aria-pressed={selectedCopyIndex === index} onClick={() => setSelectedCopyIndex(index)}>
+                <span className="copy-option-topline"><span>{variant.angle}</span><span>方案 {String.fromCharCode(65 + index)}</span></span>
+                <strong>{variant.title}</strong>
+                <span className="copy-option-body">{variant.body}</span>
+                <span className="copy-tags">{variant.tags.map((tag) => <span key={tag}>{tag}</span>)}</span>
               </button>
             </article>
           ))}
+          <button className="primary-button copy-copy-button" type="button" disabled={selectedCopyIndex === null} onClick={() => { if (selectedCopyIndex !== null) void copyVariant(selectedCopyIndex, copyResult.variants[selectedCopyIndex]); }}>
+            {copiedIndex === selectedCopyIndex && selectedCopyIndex !== null ? '已复制' : '复制选中文案'}
+          </button>
         </div>}
-        <p className="privacy-note">原始图片和海报只用于本次文案生成，不会影响已经保存的海报。</p>
+        <p className="privacy-note">原始图片和勾选的海报只用于本次文案生成，不会影响已暂存的海报。</p>
       </section>
     </main>
   );

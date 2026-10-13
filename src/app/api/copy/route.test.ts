@@ -45,6 +45,23 @@ describe('POST /api/copy', () => {
     }));
   });
 
+  it('accepts one request containing all three selected poster images', async () => {
+    const posters = ['lifestyle', 'story', 'editorial'].map((style) => ({
+      imageDataUrl: `data:image/png;base64,${style.toUpperCase()}`,
+      width: 768, height: 1024, style,
+      copy: { title: '针织兔子', description: '柔软日常。', tags: ['#针织玩偶'] }
+    }));
+    const response = await POST(request({
+      originalImageDataUrl: fields.originalImageDataUrl,
+      originalWidth: fields.originalWidth,
+      originalHeight: fields.originalHeight,
+      posters: JSON.stringify(posters),
+      keywords: '', creativeIdea: '', prompt: ''
+    }));
+    expect(response.status).toBe(200);
+    expect((await response.json()).variants).toHaveLength(3);
+  });
+
   it('rejects invalid image input without calling a model', async () => {
     const response = await POST(request({ ...fields, posterImageDataUrl: 'not-an-image' }));
 

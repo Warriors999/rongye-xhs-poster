@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PosterPreview } from '@/components/poster/PosterPreview';
 import { defaultResearchSummary, type PosterDraft, type PosterStyle } from '@/domain/project';
 import { posterFilename, saveImage } from '@/lib/export/render-poster';
@@ -51,11 +51,13 @@ function PosterOption({ draft, selected, busy, onSelect, onSave, onRemake }: {
 export function ChooseScreen() {
   const upload = usePosterStore((state) => state.upload);
   const generation = usePosterStore((state) => state.generation);
+  const promptPlan = usePosterStore((state) => state.promptPlan);
   const selectedDraft = usePosterStore((state) => state.selectedDraft);
   const error = usePosterStore((state) => state.error);
   const selectDraft = usePosterStore((state) => state.selectDraft);
   const setExportResult = usePosterStore((state) => state.setExportResult);
   const regenerateOne = usePosterStore((state) => state.regenerateOne);
+  const retryMissingPoster = usePosterStore((state) => state.retryMissingPoster);
   const startGeneration = usePosterStore((state) => state.startDesign);
   const openCopyComposer = usePosterStore((state) => state.openCopyComposer);
   const goBack = usePosterStore((state) => state.goBack);
@@ -65,9 +67,23 @@ export function ChooseScreen() {
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [projectNotice, setProjectNotice] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!upload || !generation?.posters.length) return;
+    let active = true;
+    const snapshot = usePosterStore.getState();
+    setProjectNotice('正在自动暂存最近一次结果…');
+    void createProjectSnapshot(snapshot)
+      .then((project) => active ? projectLibrary.saveLatest(project) : undefined)
+      .then(() => { if (active) setProjectNotice('已自动暂存最近一次结果，仅此浏览器可恢复。'); })
+      .catch(() => { if (active) setProjectNotice('自动暂存失败，请先下载图片。'); });
+    return () => { active = false; };
+  }, [generation, upload]);
+
   if (!generation) return <main className="placeholder-screen"><p>还没有可选择的海报方案</p></main>;
   const posters = Array.isArray(generation.posters) ? generation.posters : [];
   const posterCount = posters.length;
+  const missingPosters = promptPlan?.posters.map((poster, index) => ({ poster, index }))
+    .filter(({ poster }) => !posters.some((ready) => ready.style === poster.style)) ?? [];
   const research = generation.research ?? defaultResearchSummary;
   const allDownloaded = posterCount > 0 && posters.every((poster) => downloadedKeys.includes(poster.image.id));
 
@@ -109,20 +125,6 @@ export function ChooseScreen() {
     } finally { setSavingKey(null); }
   };
 
-  const saveProject = async () => {
-    if (savingKey) return;
-    setSavingKey('project');
-    setSaveError(null);
-    setProjectNotice(null);
-    try {
-      const project = await createProjectSnapshot(usePosterStore.getState());
-      await projectLibrary.save(project);
-      setProjectNotice('已保存到此浏览器的作品库。');
-    } catch (saveFailure) {
-      setSaveError(saveFailure instanceof Error ? saveFailure.message : '作品保存失败，请重试');
-    } finally { setSavingKey(null); }
-  };
-
   return (
     <main className="app-shell choose-shell">
       <section className="choose-card" aria-labelledby="choose-title">
@@ -130,20 +132,20 @@ export function ChooseScreen() {
           <div><p className="kicker">{posterCount > 0 ? `AI 已经做好 ${posterCount} 张` : 'AI 生成没有完成'}</p><h1 id="choose-title">{posterCount > 0 ? '找到你喜欢的那一张' : '这次没有生成合格的海报'}</h1></div>
           {upload && <img className="choose-upload-thumb" src={upload.dataUrl} alt="上传的玩偶照片小预览" />}
         </div>
-        <p className="choose-intro">{posterCount > 0 ? '选中海报，下载或提出调整建议。也可以把这次作品保存在浏览器中。' : '原图和创作想法已经保留，可以重新生成一次。'}</p>
+        <p className="choose-intro">{posterCount > 0 ? '选中海报，下载或提出调整建议。本次结果会自动暂存到当前浏览器。' : '原图和创作想法已经保留，可以重新生成一次。'}</p>
         {(error || saveError) && <p className="save-error" role="alert">{error || saveError}</p>}
         {saveNotice && <p className="library-notice" role="status">{saveNotice}</p>}
         {projectNotice && <p className="library-notice" role="status" aria-label="作品保存状态">{projectNotice}</p>}
         {generation.warnings && generation.warnings.length > 0 && <div className="choose-warnings" role="status" aria-label="生成提示">{generation.warnings.map((warning, index) => <p key={`${warning}-${index}`}>{warning}</p>)}</div>}
+        {missingPosters.length > 0 && <div className="missing-posters"><p>已完成的图片保留在这里。失败的方案可以单独补生成，不会重新生成其他图片。</p>{missingPosters.map(({ poster, index }) => <button key={poster.style} className="secondary-button" type="button" onClick={() => retryMissingPoster(poster.style)}>只补生成方案 {String.fromCharCode(65 + index)}</button>)}</div>}
         {posterCount > 0 ? <div className="poster-options">{posters.map((draft, index) => <PosterOption key={draft.image.id + draft.style} draft={draft} selected={selectedDraft?.style === draft.style} busy={Boolean(savingKey)} onSelect={selectDraft} onSave={() => void saveOne(draft, index)} onRemake={(feedback) => regenerateOne(draft, feedback)} />)}</div> : <div className="choose-empty" role="status"><p>暂时没有可下载的海报，请重新生成。</p></div>}
         {posterCount > 0 && <div className="choose-actions">
-          <button className="primary-button project-save-button" type="button" onClick={() => void saveProject()} disabled={Boolean(savingKey)}>{savingKey === 'project' ? '正在保存作品…' : '保存到作品库'}</button>
           <button className="secondary-button save-all-button" type="button" onClick={() => void saveAll()} disabled={Boolean(savingKey)}>{savingKey === 'all' ? `正在准备 ${posterCount} 张图片…` : allDownloaded ? `已发起全部 ${posterCount} 张下载` : `全部下载 ${posterCount} 张`}</button>
-          <button className="secondary-button copy-entry-button" type="button" aria-label="生成小红书文案" onClick={openCopyComposer} disabled={!selectedDraft || Boolean(savingKey)}>{selectedDraft ? '生成小红书文案' : '选中一张，再生成文案'}</button>
+          <button className="secondary-button copy-entry-button" type="button" aria-label="生成小红书文案" onClick={openCopyComposer} disabled={Boolean(savingKey)}>用本次 {posterCount} 张生成文案</button>
         </div>}
         <details className="prompt-details research-details"><summary>查看本次设计依据</summary><p className="research-note">参考研究：{research.composition} 配色：{research.palette}</p></details>
         <div className="choose-actions"><button className="text-button choose-back-button" type="button" onClick={goBack}>换一张照片</button><button className="text-button regenerate-button" type="button" onClick={startGeneration}>{posterCount ? '重新生成全部方案' : '不喜欢？重新生成'}</button></div>
-        <p className="privacy-note">作品库仅保存在此浏览器，最多保留 12 个作品。生成发布文案为可选操作。</p>
+        <p className="privacy-note">最近一次结果自动保存在此浏览器；清除浏览器数据后无法恢复，请下载喜欢的图片。生成发布文案为可选操作。</p>
       </section>
     </main>
   );

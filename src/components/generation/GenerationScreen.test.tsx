@@ -74,6 +74,18 @@ describe('GenerationScreen', () => {
     expect(screen.queryByText(/\d+%/)).not.toBeInTheDocument();
   });
 
+  it('warns before leaving an in-flight image request', () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => undefined)));
+    const confirm = vi.fn().mockReturnValue(false);
+    vi.stubGlobal('confirm', confirm);
+    render(<GenerationScreen />);
+    fireEvent.click(screen.getByRole('button', { name: '返回修改' }));
+    expect(usePosterStore.getState().step).toBe('generating');
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: '返回修改' }));
+    expect(usePosterStore.getState().step).toBe('upload');
+  });
+
   it('submits a single redo with its original photo, reference, selected design and feedback', async () => {
     usePosterStore.getState().setGeneration(createGeneration());
     const before = usePosterStore.getState().generation!;

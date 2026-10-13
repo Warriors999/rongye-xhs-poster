@@ -1,5 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ImageAsset } from '@/domain/project';
+import { createEmptyDraft, defaultResearchSummary } from '@/domain/project';
+import { projectLibrary } from '@/lib/projects/project-library';
 import { usePosterStore } from '@/store/use-poster-store';
 import { Wizard } from './Wizard';
 
@@ -54,5 +56,36 @@ describe('Wizard', () => {
     fireEvent.click(screen.getByRole('button', { name: '创作' }));
     expect(screen.getByRole('heading', { name: '正在识别玩偶' })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a back button on inner pages and returns without clearing the result', async () => {
+    render(<Wizard />);
+    fireEvent.click(screen.getByRole('button', { name: /进入绒页/ }));
+    act(() => {
+      usePosterStore.getState().setUpload(upload);
+      usePosterStore.getState().startGeneration();
+      usePosterStore.getState().setGeneration({ analysis: { subject: '兔子', colors: ['白'], material: '毛线', details: [] }, research: defaultResearchSummary, posters: [{ ...createEmptyDraft(), image: upload }] });
+    });
+    fireEvent.click(screen.getByRole('button', { name: '返回上一级' }));
+    expect(usePosterStore.getState().step).toBe('upload');
+    expect(usePosterStore.getState().generation?.posters).toHaveLength(1);
+    expect(screen.getByRole('button', { name: '继续查看本次结果' })).toBeInTheDocument();
+    await screen.findByText('暂时无法读取本地作品。');
+  });
+
+  it('offers the last auto-saved result after reopening the site', async () => {
+    const project = {
+      version: 1 as const, id: 'latest', savedAt: Date.now(), title: '针织兔子',
+      upload, referenceImage: null, creativeIdea: '春日', keywords: '', forbiddenWords: '',
+      generation: { analysis: { subject: '针织兔子', colors: ['白'], material: '毛线', details: [] }, research: defaultResearchSummary, posters: [{ ...createEmptyDraft(), image: upload }] },
+      selectedDraft: null, copyPrompt: '', copyResult: null
+    };
+    const list = vi.spyOn(projectLibrary, 'list').mockResolvedValue([project]);
+    render(<Wizard />);
+    fireEvent.click(screen.getByRole('button', { name: /进入绒页/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '继续上次生成结果' }));
+    expect(usePosterStore.getState().step).toBe('choose');
+    expect(usePosterStore.getState().generation?.posters).toHaveLength(1);
+    list.mockRestore();
   });
 });

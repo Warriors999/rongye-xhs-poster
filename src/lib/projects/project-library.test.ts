@@ -18,7 +18,19 @@ describe('project library', () => {
     expect(snapshot.generation.posters[0].copy.tags).not.toContain('#外部');
   });
 
-  it('stores and reopens the latest 12 works and removes a deleted work', async () => {
+  it('keeps a partial result and its remaining prompt plan for retry after reopening', async () => {
+    const plan = { ...generation, posters: [
+      { ...createEmptyDraft(), style: 'lifestyle' as const, image },
+      { ...createEmptyDraft(), style: 'story' as const, image },
+      { ...createEmptyDraft(), style: 'editorial' as const, image }
+    ] };
+    const snapshot = await createProjectSnapshot({ upload: image, referenceImage: null, creativeIdea: '', keywords: '', forbiddenWords: '', generation: { ...generation, posters: [plan.posters[0], plan.posters[2]] }, selectedDraft: null, copyPrompt: '', copyResult: null, promptPlan: plan, originalPrompts: ['A', 'B', 'C'] });
+    expect(snapshot.generation.posters).toHaveLength(2);
+    expect(snapshot.promptPlan?.posters).toHaveLength(3);
+    expect(snapshot.originalPrompts).toEqual(['A', 'B', 'C']);
+  });
+
+  it('keeps existing manually saved works available', async () => {
     let records: SavedProject[] = [];
     const storage: ProjectStorage = { readAll: async () => structuredClone(records), replaceAll: async (next) => { records = structuredClone(next); } };
     const library = createProjectLibrary(storage);
@@ -29,6 +41,17 @@ describe('project library', () => {
     await reopened.remove('saved-8');
     expect((await library.list()).some((project) => project.id === 'saved-8')).toBe(false);
     expect(await library.list()).toHaveLength(11);
+  });
+
+  it('replaces only the latest auto-saved result while retaining old manual works', async () => {
+    let records: SavedProject[] = [];
+    const storage: ProjectStorage = { readAll: async () => structuredClone(records), replaceAll: async (next) => { records = structuredClone(next); } };
+    const library = createProjectLibrary(storage);
+    const base = await createProjectSnapshot({ upload: image, referenceImage: null, creativeIdea: '', keywords: '', forbiddenWords: '', generation: { ...generation, posters: [{ ...createEmptyDraft(), image }] }, selectedDraft: null, copyPrompt: '', copyResult: null });
+    await library.save({ ...base, id: 'old-manual', savedAt: 1 });
+    await library.saveLatest({ ...base, savedAt: 2 });
+    await library.saveLatest({ ...base, savedAt: 3, title: '新结果' });
+    expect((await library.list()).map((project) => project.title)).toEqual(['新结果', base.title]);
   });
 
   it('uses atomic storage mutation so two independent pages retain each other’s saves', async () => {

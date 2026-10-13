@@ -24,30 +24,33 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const originalImageDataUrl = values.get('originalImageDataUrl');
-  const posterImageDataUrl = values.get('posterImageDataUrl');
-  if (
-    (typeof originalImageDataUrl === 'string' && originalImageDataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) ||
-    (typeof posterImageDataUrl === 'string' && posterImageDataUrl.length > MAX_IMAGE_DATA_URL_LENGTH)
-  ) {
-    return errorResponse(413, '图片文件过大，请压缩后重试');
-  }
-
-  let selectedPosterCopy: unknown;
+  let posters: unknown;
   try {
-    selectedPosterCopy = JSON.parse(String(values.get('selectedPosterCopy') ?? ''));
+    const submittedPosters = values.get('posters');
+    posters = typeof submittedPosters === 'string'
+      ? JSON.parse(submittedPosters)
+      : [{
+          imageDataUrl: values.get('posterImageDataUrl'),
+          width: Number(values.get('posterWidth')),
+          height: Number(values.get('posterHeight')),
+          style: values.get('selectedStyle'),
+          copy: JSON.parse(String(values.get('selectedPosterCopy') ?? ''))
+        }];
   } catch {
     return errorResponse(400, '请求参数无效，请检查图片和提示词');
+  }
+  if (
+    (typeof originalImageDataUrl === 'string' && originalImageDataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) ||
+    (Array.isArray(posters) && posters.some((poster) => typeof poster?.imageDataUrl === 'string' && poster.imageDataUrl.length > MAX_IMAGE_DATA_URL_LENGTH))
+  ) {
+    return errorResponse(413, '图片文件过大，请压缩后重试');
   }
 
   const parsed = copyGenerationRequestSchema.safeParse({
     originalImageDataUrl,
     originalWidth: Number(values.get('originalWidth')),
     originalHeight: Number(values.get('originalHeight')),
-    posterImageDataUrl,
-    posterWidth: Number(values.get('posterWidth')),
-    posterHeight: Number(values.get('posterHeight')),
-    selectedStyle: values.get('selectedStyle'),
-    selectedPosterCopy,
+    posters,
     keywords: values.get('keywords') ?? '',
     creativeIdea: values.get('creativeIdea') ?? '',
     prompt: values.get('prompt') ?? ''
@@ -63,15 +66,11 @@ export async function POST(request: Request): Promise<Response> {
         height: parsed.data.originalHeight,
         source: 'upload'
       },
-      posterImage: {
-        id: 'selected-poster',
-        dataUrl: parsed.data.posterImageDataUrl,
-        width: parsed.data.posterWidth,
-        height: parsed.data.posterHeight,
-        source: 'upload'
-      },
-      selectedStyle: parsed.data.selectedStyle,
-      selectedPosterCopy: parsed.data.selectedPosterCopy,
+      posters: parsed.data.posters.map((poster, index) => ({
+        image: { id: `selected-poster-${index}`, dataUrl: poster.imageDataUrl, width: poster.width, height: poster.height, source: 'upload' as const },
+        style: poster.style,
+        copy: poster.copy
+      })),
       keywords: parsed.data.keywords,
       creativeIdea: parsed.data.creativeIdea,
       prompt: parsed.data.prompt

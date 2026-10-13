@@ -392,10 +392,17 @@ export async function generatePosters(input: GeneratePostersInput, options: Gene
 
     await options.onPhase?.('generating');
     const warnings: string[] = [];
-    const generated = await withDeadline(
-      () => Promise.allSettled(preparedPosters.map((poster, index) => beautifyWithBusinessRetry(imageProvider, poster, input.image, signal, undefined, MAX_BUSINESS_RETRIES, preparedPosters.filter((_, other) => other !== index).map((item) => item.design!)))),
-      signal
-    );
+    const generated = await withDeadline(async () => {
+      const outcomes: PromiseSettledResult<PosterDraft>[] = [];
+      for (let offset = 0; offset < preparedPosters.length; offset += 2) {
+        const group = preparedPosters.slice(offset, offset + 2);
+        outcomes.push(...await Promise.allSettled(group.map((poster, groupIndex) => {
+          const index = offset + groupIndex;
+          return beautifyWithBusinessRetry(imageProvider, poster, input.image, signal, undefined, MAX_BUSINESS_RETRIES, preparedPosters.filter((_, other) => other !== index).map((item) => item.design!));
+        })));
+      }
+      return outcomes;
+    }, signal);
     throwIfOperationAborted(signal);
     const successfulPosters: PosterDraft[] = [];
     generated.forEach((outcome, index) => {
