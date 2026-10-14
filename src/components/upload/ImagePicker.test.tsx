@@ -29,6 +29,47 @@ describe('ImagePicker', () => {
     expect(screen.getByLabelText('拍照使用')).toHaveAttribute('capture', 'environment');
   });
 
+  it('keeps three generated posters stacked and raises the clicked card', () => {
+    render(<ImagePicker />);
+
+    const deepSea = screen.getByRole('button', { name: '查看深海之梦示例海报' });
+    const fiberDream = screen.getByRole('button', { name: '查看织物造梦示例海报' });
+    const summerStory = screen.getByRole('button', { name: '查看夏日物语示例海报' });
+    expect(screen.getAllByRole('img', { name: /示例海报：/ })).toHaveLength(3);
+    expect(deepSea).toHaveAttribute('data-position', 'front');
+    expect(screen.getByRole('img', { name: '示例海报：深海之梦' })).toHaveAttribute('src', '/home-posters/deep-sea.webp');
+
+    fireEvent.click(fiberDream);
+    expect(fiberDream).toHaveAttribute('data-position', 'front');
+    expect(fiberDream).toHaveAttribute('aria-current', 'true');
+    expect(deepSea).not.toHaveAttribute('data-position', 'front');
+
+    fireEvent.click(summerStory);
+    expect(summerStory).toHaveAttribute('data-position', 'front');
+
+    fireEvent.click(summerStory);
+    expect(summerStory).toHaveAttribute('data-position', 'front');
+    expect(screen.getByRole('dialog', { name: '夏日物语大图预览' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: '夏日物语完整海报' })).toHaveAttribute('src', '/home-posters/summer-story-full.webp');
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭大图预览' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(summerStory).toHaveAttribute('data-position', 'front');
+  });
+
+  it('switches on a horizontal swipe and preserves vertical scrolling', () => {
+    render(<ImagePicker />);
+    const carousel = screen.getByRole('region', { name: '示例海报' });
+
+    fireEvent.touchStart(carousel, { touches: [{ clientX: 260, clientY: 100 }] });
+    fireEvent.touchEnd(carousel, { changedTouches: [{ clientX: 70, clientY: 108 }] });
+    expect(screen.getByRole('button', { name: '查看织物造梦示例海报' })).toHaveAttribute('data-position', 'front');
+
+    fireEvent.touchStart(carousel, { touches: [{ clientX: 180, clientY: 90 }] });
+    fireEvent.touchEnd(carousel, { changedTouches: [{ clientX: 170, clientY: 250 }] });
+    expect(screen.getByRole('button', { name: '查看织物造梦示例海报' })).toHaveAttribute('data-position', 'front');
+  });
+
   it('stores a normalized image and shows its preview after selection', async () => {
     render(<ImagePicker />);
     const file = new File(['photo'], 'doll.jpg', { type: 'image/jpeg' });

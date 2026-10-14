@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { PosterPreview } from '@/components/poster/PosterPreview';
+import { ImagePreviewDialog } from '@/components/common/ImagePreviewDialog';
 import { defaultResearchSummary, type PosterDraft, type PosterStyle } from '@/domain/project';
 import { posterFilename, saveImage } from '@/lib/export/render-poster';
 import { imageSourceToDataUrl } from '@/lib/projects/image-source';
@@ -11,11 +12,12 @@ import { usePosterStore } from '@/store/use-poster-store';
 
 const styleNames: Record<PosterStyle, string> = { cute: '可爱种草', daily: '手作日常', series: '系列账号', lifestyle: '动态方案 A', story: '动态方案 B', editorial: '动态方案 C' };
 
-function PosterOption({ draft, selected, busy, onSelect, onSave, onRemake }: {
+function PosterOption({ draft, selected, busy, onSelect, onPreview, onSave, onRemake }: {
   draft: PosterDraft;
   selected: boolean;
   busy: boolean;
   onSelect: (draft: PosterDraft) => void;
+  onPreview: (draft: PosterDraft) => void;
   onSave: () => void;
   onRemake: (feedback: string) => void;
 }) {
@@ -24,14 +26,16 @@ function PosterOption({ draft, selected, busy, onSelect, onSave, onRemake }: {
   const name = draft.design?.label?.trim() || styleNames[draft.style];
   return (
     <article className={selected ? 'poster-option selected' : 'poster-option'}>
-      <button className="poster-select-button" type="button" onClick={() => onSelect(draft)} aria-label={`选择${name}`} aria-pressed={selected}>
+      <button className="poster-select-button" type="button" onClick={() => onPreview(draft)} aria-label={`放大查看${name}`}>
         <PosterPreview draft={draft} />
       </button>
       <div className="poster-option-copy">
         <strong>{name}</strong>
         <p>{draft.designNote || draft.design?.concept || '保留真实主体，突出清晰的视觉重心。'}</p>
+        <small className="poster-preview-hint">点击图片放大预览</small>
       </div>
       <div className="poster-option-actions">
+        <button className="secondary-button" type="button" onClick={() => onSelect(draft)} aria-label={`选择${name}`} aria-pressed={selected} disabled={busy}>{selected ? '已选择' : '选择这张'}</button>
         <button className="poster-save-button primary-button" type="button" onClick={onSave} disabled={busy}>{busy ? '正在准备…' : '下载这张'}</button>
         <button className="secondary-button" type="button" onClick={() => setRemaking((current) => !current)} disabled={busy}>调整这张</button>
       </div>
@@ -67,6 +71,7 @@ export function ChooseScreen() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [projectNotice, setProjectNotice] = useState<string | null>(null);
+  const [previewDraft, setPreviewDraft] = useState<PosterDraft | null>(null);
 
   useEffect(() => {
     if (!upload || !generation?.posters.length) return;
@@ -143,7 +148,7 @@ export function ChooseScreen() {
         {projectNotice && <p className="library-notice" role="status" aria-label="作品保存状态">{projectNotice}</p>}
         {generation.warnings && generation.warnings.length > 0 && <div className="choose-warnings" role="status" aria-label="生成提示">{generation.warnings.map((warning, index) => <p key={`${warning}-${index}`}>{warning}</p>)}</div>}
         {missingPosters.length > 0 && <div className="missing-posters"><p>已完成的图片保留在这里。失败的方案可以单独补生成，不会重新生成其他图片。</p>{missingPosters.map(({ poster, index }) => <button key={poster.style} className="secondary-button" type="button" onClick={() => retryMissingPoster(poster.style)}>只补生成方案 {String.fromCharCode(65 + index)}</button>)}</div>}
-        {posterCount > 0 ? <div className="poster-options">{posters.map((draft, index) => <PosterOption key={draft.image.id + draft.style} draft={draft} selected={selectedDraft?.style === draft.style} busy={Boolean(savingKey)} onSelect={selectDraft} onSave={() => void saveOne(draft, index)} onRemake={(feedback) => regenerateOne(draft, feedback)} />)}</div> : <div className="choose-empty" role="status"><p>暂时没有可下载的海报，请重新生成。</p></div>}
+        {posterCount > 0 ? <div className="poster-options">{posters.map((draft, index) => <PosterOption key={draft.image.id + draft.style} draft={draft} selected={selectedDraft?.style === draft.style} busy={Boolean(savingKey)} onSelect={selectDraft} onPreview={setPreviewDraft} onSave={() => void saveOne(draft, index)} onRemake={(feedback) => regenerateOne(draft, feedback)} />)}</div> : <div className="choose-empty" role="status"><p>暂时没有可下载的海报，请重新生成。</p></div>}
         {posterCount > 0 && <div className="choose-actions">
           <button className="secondary-button save-all-button" type="button" onClick={() => void saveAll()} disabled={Boolean(savingKey)}>{savingKey === 'all' ? `正在准备 ${posterCount} 张图片…` : allDownloaded ? `已发起全部 ${posterCount} 张下载` : `全部下载 ${posterCount} 张`}</button>
           <button className="secondary-button copy-entry-button" type="button" aria-label="生成小红书文案" onClick={openCopyComposer} disabled={Boolean(savingKey)}>用本次 {posterCount} 张生成文案</button>
@@ -152,6 +157,7 @@ export function ChooseScreen() {
         <div className="choose-actions"><button className="text-button choose-back-button" type="button" onClick={goBack}>换一张照片</button><button className="text-button regenerate-button" type="button" onClick={startGeneration}>{posterCount ? '重新生成全部方案' : '不喜欢？重新生成'}</button></div>
         <p className="privacy-note">最近一次结果自动保存在此浏览器；清除浏览器数据后无法恢复，请下载喜欢的图片。生成发布文案为可选操作。</p>
       </section>
+      {previewDraft && <ImagePreviewDialog src={previewDraft.image.dataUrl} title={previewDraft.design?.label?.trim() || styleNames[previewDraft.style]} onClose={() => setPreviewDraft(null)} />}
     </main>
   );
 }

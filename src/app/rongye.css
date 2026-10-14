@@ -44,12 +44,20 @@
 .rongye-app .photo-original-tag > span { border-radius:50%; background:#d9e2ce; width:15px; height:15px; display:grid; place-items:center; font-size:9px; }
 .rongye-app .image-picker { margin:0; }
 .rongye-app .upload-empty-art { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:8px 0 16px; }
-.rongye-app .upload-photo-stack { position:relative; width:252px; max-width:100%; height:151px; margin:7px 0 15px; }
-.rongye-app .upload-photo-stack > img { position:absolute; object-fit:cover; border:5px solid #fffdf8; border-radius:17px; width:109px; height:134px; top:9px; box-shadow:0 10px 20px #5c46321a; }
-.rongye-app .upload-photo-stack .stack-left { left:12px; transform:rotate(-13deg); object-position:36% center; }
-.rongye-app .upload-photo-stack .stack-right { right:12px; transform:rotate(13deg); }
-.rongye-app .upload-photo-stack .stack-front { left:50%; transform:translateX(-50%) rotate(-3deg); width:120px; height:147px; top:0; object-position:center 58%; }
-.rongye-app .stack-plus { position:absolute; right:50px; bottom:-3px; width:35px; height:35px; display:grid; place-items:center; border:3px solid #fff; border-radius:50%; background:#a85a45; color:#fff; box-shadow:0 4px 10px #5c463222; }
+.rongye-app .upload-photo-stack { --side-shift:66px; position:relative; width:252px; max-width:100%; height:170px; margin:7px 0 15px; touch-action:pan-y; user-select:none; }
+.rongye-app .upload-photo-stack .stack-card { position:absolute; top:0; left:50%; width:120px; height:160px; padding:0; overflow:hidden; border:5px solid #fffdf8; border-radius:17px; background:#fffdf8; box-shadow:0 10px 20px #5c46321a; transition:transform .28s ease,box-shadow .28s ease; }
+.rongye-app .upload-photo-stack .stack-card img { display:block; width:100%; height:100%; object-fit:contain; pointer-events:none; }
+.rongye-app .upload-photo-stack .stack-card[data-position=left] { z-index:1; transform:translateX(calc(-50% - var(--side-shift))) rotate(-13deg) scale(.91); }
+.rongye-app .upload-photo-stack .stack-card[data-position=right] { z-index:2; transform:translateX(calc(-50% + var(--side-shift))) rotate(13deg) scale(.91); }
+.rongye-app .upload-photo-stack .stack-card[data-position=front] { z-index:3; transform:translateX(-50%) rotate(-3deg); box-shadow:0 13px 24px #5c463229; }
+.rongye-app .stack-plus { position:absolute; z-index:4; right:50px; bottom:-3px; width:35px; height:35px; display:grid; place-items:center; border:3px solid #fff; border-radius:50%; background:#a85a45; color:#fff; box-shadow:0 4px 10px #5c463222; pointer-events:none; }
+.rongye-app .image-preview-dialog { width:min(calc(100vw - 32px),600px); height:max-content; max-width:none; max-height:calc(100svh - 24px); padding:0; border:0; background:transparent; color:#fff; overflow:visible; text-align:center; }
+.rongye-app .image-preview-dialog:not([open]) { display:none; }
+.rongye-app .image-preview-dialog::backdrop { background:rgb(28 24 22 / 88%); backdrop-filter:blur(5px); }
+.rongye-app .image-preview-close { display:flex; align-items:center; gap:8px; min-height:44px; margin:0 0 10px auto; padding:0 12px; border-radius:99px; background:#fffdf8; color:#493c39; font-size:13px; }
+.rongye-app .image-preview-close span { font-size:22px; line-height:1; }
+.rongye-app .image-preview-dialog img { display:block; width:100%; height:auto; max-height:calc(100svh - 126px); margin:auto; border-radius:10px; object-fit:contain; box-shadow:0 20px 55px #0006; }
+.rongye-app .image-preview-caption { margin:12px 0 0; color:#fffdf8; font-size:14px; font-weight:600; }
 .rongye-app .upload-empty-art p { margin:0 0 4px; font-size:20px; font-weight:650; letter-spacing:-.025em; color:#463b33; }
 .rongye-app .upload-empty-art small { color:#756b5f; font-size:12px; }
 .rongye-app .picker-actions { display:flex; gap:9px; margin-top:0; }
@@ -129,6 +137,7 @@
 .rongye-app .poster-option-copy { display:block; margin:16px 6px 13px; }
 .rongye-app .poster-option-copy strong { color:#4b3d30; font-size:18px; }
 .rongye-app .poster-option-copy p { font-size:13px; color:#7e6c59; line-height:1.65; margin:8px 0 0; }
+.rongye-app .poster-preview-hint { display:block; margin-top:9px; color:#9b6a52; font-size:11px; }
 .rongye-app .poster-option-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .rongye-app .poster-option-actions button { flex:1; padding:10px 12px; min-width:0; font-size:13px; }
 .rongye-app .prompt-details { border-top:1px solid #eee9e0; margin-top:13px; font-size:13px; }
@@ -215,9 +224,8 @@
 .rongye-app .create-submit { position:static; width:100%; transform:none; margin-top:26px; }
 .rongye-app .create-shell { padding-bottom:40px; }
 .rongye-app .input-photo-block { padding:23px; }
-.rongye-app .upload-photo-stack { height:200px; }
-.rongye-app .upload-photo-stack > img { height:172px; width:129px; }
-.rongye-app .upload-photo-stack .stack-front { height:190px; width:143px; }
+.rongye-app .upload-photo-stack { --side-shift:80px; width:300px; height:200px; }
+.rongye-app .upload-photo-stack .stack-card { width:143px; height:190px; }
 .rongye-app .idea-starters button { flex-basis:calc((100% - 24px)/3); }
 .rongye-app .idea-starters img { height:190px; }
 }

@@ -1,7 +1,13 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createEmptyDraft, defaultResearchSummary, type GenerationResult, type ImageAsset } from '@/domain/project';
 import { usePosterStore } from '@/store/use-poster-store';
+import { projectLibrary } from '@/lib/projects/project-library';
 import { CopyScreen } from './CopyScreen';
+
+vi.mock('@/lib/projects/project-library', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/projects/project-library')>();
+  return { ...actual, projectLibrary: { ...actual.projectLibrary, saveLatest: vi.fn().mockResolvedValue(undefined) } };
+});
 
 const upload: ImageAsset = {
   id: 'copy-upload',
@@ -24,6 +30,7 @@ const generation: GenerationResult = {
 
 describe('CopyScreen', () => {
   beforeEach(() => {
+    vi.mocked(projectLibrary.saveLatest).mockClear();
     usePosterStore.getState().clearSession();
     usePosterStore.getState().setUpload(upload);
     usePosterStore.getState().startGeneration();
@@ -108,6 +115,8 @@ describe('CopyScreen', () => {
     expect(copySelected).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: '选择文案方案 B' }));
     expect(copySelected).toBeEnabled();
+    expect(projectLibrary.saveLatest).toHaveBeenCalledOnce();
+    expect(vi.mocked(projectLibrary.saveLatest).mock.calls[0][0].copyResult?.variants).toHaveLength(3);
   });
 
   it('keeps the selected poster flow intact when copy generation fails', async () => {

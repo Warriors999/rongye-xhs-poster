@@ -153,6 +153,20 @@ describe('ChooseScreen', () => {
     expect(usePosterStore.getState().generation).toBeNull();
   });
 
+  it('opens the generated image at full size without changing the selected poster', () => {
+    render(<ChooseScreen />);
+
+    fireEvent.click(screen.getByRole('button', { name: '放大查看动态方案 B' }));
+    expect(screen.getByRole('dialog', { name: '动态方案 B大图预览' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: '动态方案 B完整海报' })).toHaveAttribute('src', 'data:image/jpeg;base64,story');
+    expect(usePosterStore.getState().selectedDraft).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭大图预览' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '选择动态方案 B' }));
+    expect(usePosterStore.getState().selectedDraft?.style).toBe('story');
+  });
+
   it('opens copy for all generated posters without requiring a single selected card', () => {
     render(<ChooseScreen />);
 

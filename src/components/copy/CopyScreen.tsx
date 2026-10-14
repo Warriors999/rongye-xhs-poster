@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { copyGenerationResponseSchema } from '@/server/ai/contracts';
 import type { CopyGenerationResult } from '@/domain/project';
+import { createProjectSnapshot, projectLibrary } from '@/lib/projects/project-library';
 import { usePosterStore } from '@/store/use-poster-store';
 
 const TASK_ASSET_URL = /^\/api\/tasks\/[A-Za-z0-9_-]{8,100}\?asset=(?:lifestyle|story|editorial|cute|daily|series)$/;
@@ -106,7 +107,18 @@ export function CopyScreen() {
       if (!response.ok) throw new Error(errorMessageFromBody(body));
       const parsed = copyGenerationResponseSchema.safeParse(body);
       if (!parsed.success) throw new Error('文案生成结果格式异常，请重试');
-      if (currentRequest()) setCopyResult(parsed.data as CopyGenerationResult);
+      if (!currentRequest()) return;
+      let saveFailed = false;
+      try {
+        const snapshot = await createProjectSnapshot({ ...usePosterStore.getState(), copyResult: parsed.data });
+        await projectLibrary.saveLatest(snapshot);
+      } catch {
+        saveFailed = true;
+      }
+      if (currentRequest()) {
+        setCopyResult(parsed.data as CopyGenerationResult);
+        if (saveFailed) setCopyError('文案已生成，但暂存失败，请先复制文案。');
+      }
     } catch (error) {
       if (currentRequest()) setCopyError(error instanceof Error ? error.message : '文案生成服务暂时不可用，请重试');
     } finally {

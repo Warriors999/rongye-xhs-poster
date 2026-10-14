@@ -4,6 +4,7 @@ import { useEffect, useRef, type ChangeEvent } from 'react';
 import { StatusBanner } from '@/components/common/StatusBanner';
 import { normalizeImage } from '@/lib/image/resize-image';
 import { usePosterStore } from '@/store/use-poster-store';
+import { HomePosterStack } from './HomePosterStack';
 
 export function ImagePicker() {
   const albumInput = useRef<HTMLInputElement>(null);
@@ -43,8 +44,8 @@ export function ImagePicker() {
 
   return (
     <div className="image-picker">
-      {!upload && <div className="upload-empty-art" aria-hidden="true">
-        <div className="upload-photo-stack"><img className="stack-left" src="/visuals/editorial.webp" alt="" /><img className="stack-right" src="/visuals/story.webp" alt="" /><img className="stack-front" src="/visuals/hero.webp" alt="" /><span className="stack-plus"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg></span></div>
+      {!upload && <div className="upload-empty-art">
+        <HomePosterStack />
         <p>带上你的小伙伴</p><small>一张原图，开启三种可能。</small>
       </div>}
       {upload && <img className="upload-preview" src={upload.dataUrl} alt="已上传的玩偶照片" />}
