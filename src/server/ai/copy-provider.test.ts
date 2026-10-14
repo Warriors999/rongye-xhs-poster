@@ -46,7 +46,7 @@ describe('copy providers', () => {
       env: {
         AI_VISION_BASE_URL: 'https://apinebula.example/v1',
         AI_VISION_API_KEY: 'vision-secret',
-        AI_VISION_MODEL: 'gemini-3.1-flash-lite'
+        AI_VISION_MODEL: 'gpt-6.1-sol'
       },
       fetchImpl
     });
@@ -56,7 +56,8 @@ describe('copy providers', () => {
     expect(result.variants).toHaveLength(3);
     expect(result.variants[0]?.title).toBe('窗边有个软乎乎的朋友');
     const [, request] = fetchImpl.mock.calls[0] as [string, RequestInit];
-    const body = JSON.parse(String(request.body)) as { messages: Array<{ content: Array<{ type: string; text?: string; image_url?: { url: string } }> }> };
+    const body = JSON.parse(String(request.body)) as { reasoning_effort?: string; messages: Array<{ content: Array<{ type: string; text?: string; image_url?: { url: string } }> }> };
+    expect(body.reasoning_effort).toBe('high');
     const content = body.messages[0]?.content ?? [];
     expect(content.filter((part) => part.type === 'image_url').map((part) => part.image_url?.url)).toEqual([
       input.originalImage.dataUrl,

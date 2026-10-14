@@ -9,6 +9,7 @@ export const COPY_PROVIDER_UNAVAILABLE_ERROR = '文案生成服务暂时不可�
 export const COPY_FORMAT_ERROR = '文案生成结果格式异常，请重试';
 
 const DEFAULT_TIMEOUT_MS = 150_000;
+const GPT_61_SOL_TIMEOUT_MS = 270_000;
 const MAX_FORMAT_RETRIES = 1;
 const MAX_RESPONSE_BODY_BYTES = 256 * 1024;
 const MAX_TITLE_LENGTH = 36;
@@ -165,7 +166,7 @@ abstract class BaseCopyProvider implements CopyProvider {
   constructor(dependencies: ProviderDependencies = {}) {
     this.fetchImpl = dependencies.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.env = dependencies.env ?? process.env;
-    this.timeoutMs = dependencies.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.timeoutMs = dependencies.timeoutMs ?? (this.env.AI_VISION_MODEL?.trim() === 'gpt-6.1-sol' ? GPT_61_SOL_TIMEOUT_MS : DEFAULT_TIMEOUT_MS);
   }
 
   async generate(input: CopyGenerationInput, options: AICallOptions = {}): Promise<CopyGenerationResult> {
@@ -228,6 +229,7 @@ export class OpenAICopyProvider extends BaseCopyProvider {
     const [originalSource, ...posterSources] = await Promise.all([input.originalImage, ...posters.map((poster) => poster.image)].map(compactVisionImage));
     const response = await this.postJson(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
       model,
+      ...(model === 'gpt-6.1-sol' ? { reasoning_effort: 'high' } : {}),
       response_format: { type: 'json_object' },
       messages: [{ role: 'user', content: [
         { type: 'text', text: prompt },

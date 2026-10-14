@@ -45,9 +45,10 @@ describe('AI providers', () => {
       preserve: '原图玩偶的脸、姿态和配件位置'
     } }));
     const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ...validCompletion, posters }) } }] }), { status: 200 }));
-    const provider = new OpenAICompatibleProvider({ env: { AI_BASE_URL: 'https://example.test/v1', AI_API_KEY: 'key', AI_VISION_MODEL: 'vision', AI_IMAGE_MODEL: 'image' }, fetchImpl });
+    const provider = new OpenAICompatibleProvider({ env: { AI_BASE_URL: 'https://example.test/v1', AI_API_KEY: 'key', AI_VISION_MODEL: 'gpt-6.1-sol', AI_IMAGE_MODEL: 'image' }, fetchImpl });
     const result = await provider.generate(input, { requireDesignedPrompt: true });
     expect(result.posters[0].finalPrompt).toContain('构图：主体靠左');
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1].body)).reasoning_effort).toBe('high');
   });
   let originalProvider: string | undefined;
 

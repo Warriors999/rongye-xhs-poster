@@ -11,6 +11,7 @@ export const PROVIDER_UNAVAILABLE_ERROR = '生成服务暂时不可用，请重�
 export const GENERATION_FORMAT_ERROR = '生成结果格式异常，请重试';
 
 const DEFAULT_TIMEOUT_MS = 60_000;
+const GPT_61_SOL_TIMEOUT_MS = 270_000;
 const MAX_FORMAT_RETRIES = 1;
 const MAX_RESPONSE_BODY_BYTES = 512 * 1024;
 const DEFAULT_DESIGN_NOTE = '以主体保真为前提，保留清晰留白和简洁信息层级。';
@@ -170,7 +171,7 @@ export class OpenAICompatibleProvider implements Provider {
   constructor(dependencies: ProviderDependencies = {}) {
     this.fetchImpl = dependencies.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.env = dependencies.env ?? process.env;
-    this.timeoutMs = dependencies.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.timeoutMs = dependencies.timeoutMs ?? (this.env.AI_VISION_MODEL?.trim() === 'gpt-6.1-sol' ? GPT_61_SOL_TIMEOUT_MS : DEFAULT_TIMEOUT_MS);
   }
 
   async generate(input: GenerationInput, options: AICallOptions = {}): Promise<GenerateResponse> {
@@ -183,6 +184,7 @@ export class OpenAICompatibleProvider implements Provider {
     if (!baseUrl || !apiKey || !visionModel || !imageModel) throw new Error('AI 服务配置不完整，请联系管理员');
     const body = {
       model: visionModel,
+      ...(visionModel === 'gpt-6.1-sol' ? { reasoning_effort: 'high' } : {}),
       response_format: { type: 'json_object' },
       messages: [{ role: 'user', content: [
         { type: 'text', text: buildGenerationPrompt(input) },
