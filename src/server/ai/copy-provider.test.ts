@@ -56,8 +56,10 @@ describe('copy providers', () => {
     expect(result.variants).toHaveLength(3);
     expect(result.variants[0]?.title).toBe('窗边有个软乎乎的朋友');
     const [, request] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(request.headers).toMatchObject({ Authorization: 'Bearer vision-secret' });
     const body = JSON.parse(String(request.body)) as { reasoning_effort?: string; messages: Array<{ content: Array<{ type: string; text?: string; image_url?: { url: string } }> }> };
     expect(body.reasoning_effort).toBe('high');
+    expect(JSON.parse(String(request.body)).stream).toBe(true);
     const content = body.messages[0]?.content ?? [];
     expect(content.filter((part) => part.type === 'image_url').map((part) => part.image_url?.url)).toEqual([
       input.originalImage.dataUrl,

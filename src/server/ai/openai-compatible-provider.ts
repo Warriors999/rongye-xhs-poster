@@ -4,16 +4,17 @@ import { createEmptyDraft, defaultResearchSummary, type ImageAsset, type PosterD
 import { resolveDesignBrief, sanitizeDesignText } from '@/lib/design-system';
 import { generateResponseSchema, type GenerateResponse } from './contracts';
 import { cloneResearchSummary, type GenerationInput, type Provider, type ProviderDependencies } from './provider';
-import { createCombinedSignal, raceWithAbort, readResponseBodyWithAbort, type AICallOptions } from './call-options';
+import { createCombinedSignal, raceWithAbort, type AICallOptions } from './call-options';
 import { resolveAIConfig } from './config';
+import { readChatResponse } from './chat-response';
 
 export const PROVIDER_UNAVAILABLE_ERROR = '生成服务暂时不可用，请重试';
 export const GENERATION_FORMAT_ERROR = '生成结果格式异常，请重试';
 
 const DEFAULT_TIMEOUT_MS = 60_000;
-const GPT_61_SOL_TIMEOUT_MS = 270_000;
+const GPT_61_SOL_TIMEOUT_MS = 570_000;
 const MAX_FORMAT_RETRIES = 1;
-const MAX_RESPONSE_BODY_BYTES = 512 * 1024;
+const MAX_RESPONSE_BODY_BYTES = 8 * 1024 * 1024;
 const DEFAULT_DESIGN_NOTE = '以主体保真为前提，保留清晰留白和简洁信息层级。';
 const MAX_COPY_TITLE_LENGTH = 36;
 const MAX_COPY_DESCRIPTION_LENGTH = 60;
@@ -37,6 +38,7 @@ type CompletionEnvelope = {
     message?: CompletionMessage;
   }>;
 };
+
 
 function directionForStyle(style: unknown): 'lifestyle' | 'story' | 'editorial' {
   if (style === 'story' || style === 'daily') return 'story';
@@ -86,6 +88,7 @@ function asBackground(value: unknown, fallback: string): string {
 
 function normalizePosters(value: unknown, image: ImageAsset, research: GenerationInput['research'], targetStyle?: GenerationInput['targetStyle']): unknown {
   const record = recordValue(value);
+  const analysis = recordValue(record.analysis);
   const rawPosters = Array.isArray(record.posters) ? record.posters : [];
   const slots: Array<Record<string, unknown> | undefined> = DYNAMIC_DIRECTIONS.map(() => undefined);
 
@@ -108,10 +111,12 @@ function normalizePosters(value: unknown, image: ImageAsset, research: Generatio
     const candidateCopy = recordValue(candidate.copy);
     const [fallbackTitle, fallbackDescription] = DEFAULT_COPIES[index];
     const title = asCopyText(candidateCopy.title, fallbackTitle, MAX_COPY_TITLE_LENGTH);
-    const description = asCopyText(candidateCopy.description, fallbackDescription, MAX_COPY_DESCRIPTION_LENGTH);
+    const description = asCopyText(candidateCopy.description ?? candidateCopy.subtitle, fallbackDescription, MAX_COPY_DESCRIPTION_LENGTH);
     const tags = asTags(candidateCopy.tags ?? candidateCopy.tag, index === 1 ? ['#针织玩偶', '#手作日常'] : index === 2 ? ['#针织玩偶', '#可爱种草'] : ['#针织玩偶']);
     const copy = { title, description, tags };
     const finalPrompt = formatDesignedImagePrompt(candidate.imagePrompt, copy);
+    const design = recordValue(candidate.design ?? candidate.brief);
+    const palette = recordValue(design.palette);
     return {
       ...fallback,
       ...candidate,
@@ -120,7 +125,7 @@ function normalizePosters(value: unknown, image: ImageAsset, research: Generatio
       background: asBackground(candidate.background, fallback.background),
       copy,
       finalPrompt: finalPrompt ?? undefined,
-      design: resolveDesignBrief(direction, candidate.design ?? candidate.brief, cloneResearchSummary(research)),
+      design: resolveDesignBrief(direction, { ...design, ...(Object.keys(palette).length ? { palette: Object.values(palette).filter((color) => typeof color === 'string') } : {}) }, cloneResearchSummary(research)),
       designNote: asDesignNote(candidate.designNote),
       layers: {
         ...fallback.layers,
@@ -133,6 +138,13 @@ function normalizePosters(value: unknown, image: ImageAsset, research: Generatio
 
   return {
     ...record,
+    analysis: {
+      ...analysis,
+      subject: analysis.subject ?? analysis.subjectIdentity,
+      colors: analysis.colors ?? [],
+      material: analysis.material ?? '以上传照片中真实可见的材质为准',
+      details: analysis.details ?? [analysis.poseAndOrientation, ...(Array.isArray(analysis.protectionScope) ? analysis.protectionScope : [])].filter((detail) => typeof detail === 'string' && detail.trim()).map((detail) => truncateText(detail as string, 200)).slice(0, 12)
+    },
     research: cloneResearchSummary(research),
     posters
   };
@@ -182,9 +194,11 @@ export class OpenAICompatibleProvider implements Provider {
     const visionModel = config.vision.model;
     const imageModel = config.image.model;
     if (!baseUrl || !apiKey || !visionModel || !imageModel) throw new Error('AI 服务配置不完整，请联系管理员');
+    const maxFormatRetries = visionModel === 'gpt-6.1-sol' ? 0 : MAX_FORMAT_RETRIES;
     const body = {
       model: visionModel,
       ...(visionModel === 'gpt-6.1-sol' ? { reasoning_effort: 'high' } : {}),
+      ...(visionModel === 'gpt-6.1-sol' ? { stream: true } : {}),
       response_format: { type: 'json_object' },
       messages: [{ role: 'user', content: [
         { type: 'text', text: buildGenerationPrompt(input) },
@@ -192,7 +206,7 @@ export class OpenAICompatibleProvider implements Provider {
         ...(input.referenceImage ? [{ type: 'image_url', image_url: { url: input.referenceImage.dataUrl } }] : [])
       ] }]
     };
-    for (let formatAttempt = 0; formatAttempt <= MAX_FORMAT_RETRIES; formatAttempt += 1) {
+    for (let formatAttempt = 0; formatAttempt <= maxFormatRetries; formatAttempt += 1) {
       let response: Response;
       let envelope: CompletionEnvelope | undefined;
       try {
@@ -205,13 +219,14 @@ export class OpenAICompatibleProvider implements Provider {
         envelope = result.envelope as CompletionEnvelope | undefined;
       } catch (error) {
         if (error instanceof ResponseBodyFormatError) {
-          if (formatAttempt < MAX_FORMAT_RETRIES) continue;
+          if (formatAttempt < maxFormatRetries) continue;
           throw new Error(GENERATION_FORMAT_ERROR);
         }
         if (options.signal?.aborted) throw error;
         throw new Error(PROVIDER_UNAVAILABLE_ERROR);
       }
       if (!response.ok) {
+        console.error(`[design-response] stage=upstream status=${response.status}`);
         try {
           await response.body?.cancel();
         } catch {
@@ -226,7 +241,8 @@ export class OpenAICompatibleProvider implements Provider {
         if (options.requireDesignedPrompt && normalized.posters.some((poster) => !poster.finalPrompt)) throw new Error(GENERATION_FORMAT_ERROR);
         return normalized;
       } catch {
-        if (formatAttempt < MAX_FORMAT_RETRIES) continue;
+        console.error('[design-response] stage=validation code=invalid-plan');
+        if (formatAttempt < maxFormatRetries) continue;
         throw new Error(GENERATION_FORMAT_ERROR);
       }
     }
@@ -247,10 +263,12 @@ export class OpenAICompatibleProvider implements Provider {
           throw new ResponseBodyFormatError();
         }
       }
-      const bodyText = await readResponseBodyWithAbort(response, combined.signal, MAX_RESPONSE_BODY_BYTES);
       try {
-        return { response, envelope: JSON.parse(bodyText) };
-      } catch {
+        return { response, envelope: await readChatResponse(response, combined.signal, MAX_RESPONSE_BODY_BYTES) };
+      } catch (error) {
+        if (combined.signal.aborted) throw error;
+        const code = error instanceof Error && /^chat-[a-z-]+$/.test(error.message) ? error.message : 'invalid-json';
+        console.error(`[design-response] stage=read code=${code}`);
         throw new ResponseBodyFormatError();
       }
     } finally {

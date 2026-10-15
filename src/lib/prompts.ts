@@ -71,6 +71,7 @@ export function buildGenerationPrompt({ keywords, forbiddenWords, creativeIdea =
       '--- 单张改进资料数据结束 ---'
     ] : []),
     targetStyle ? '响应必须是包含 analysis、research、posters 的 JSON；posters 只包含一个方案，含 copy、design、imagePrompt；imagePrompt 必须包含 subject、composition、visualLanguage、colorLighting、preserve。' : '响应必须只包含可解析 JSON，不要 Markdown 围栏。输出必须包含 analysis、research 和 3 个带 designNote 的 posters；每个 poster 包含 style（仅用于顺序槽位，可省略）、copy、design、imagePrompt。design 必须包含动态生成的 label、concept、layout、scene、elements、palette、typography、hierarchy、mood、negative；imagePrompt 必须包含 subject、composition、visualLanguage、colorLighting、preserve。',
+    '字段格式固定：analysis={"subject":"200字以内的真实主体说明","colors":["真实颜色"],"material":"真实可见材质","details":["原图关键细节"]}；copy={"title":"短标题","description":"短辅助句","tags":["#标签"]}；design.palette 必须是颜色字符串数组。不要增加候选清单、推理过程、审查报告或重复的研究摘要；每个字段简洁写最终可见设计。',
     '不得把用户资料或研究资料改写成额外画面文字，不得在道具、包装、背景或装饰中生成未在 copy 中明确给出的文字。'
   ].join('\n');
 }

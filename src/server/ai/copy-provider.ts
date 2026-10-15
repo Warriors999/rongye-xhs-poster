@@ -4,12 +4,13 @@ import { copyGenerationResponseSchema } from './contracts';
 import { createCombinedSignal, isAbortError, raceWithAbort, readResponseBodyWithAbort, type AICallOptions } from './call-options';
 import type { ProviderDependencies } from './provider';
 import { geminiGenerateContentUrl, resolveAIConfig } from './config';
+import { readChatResponse } from './chat-response';
 
 export const COPY_PROVIDER_UNAVAILABLE_ERROR = '文案生成服务暂时不可用，请重试';
 export const COPY_FORMAT_ERROR = '文案生成结果格式异常，请重试';
 
 const DEFAULT_TIMEOUT_MS = 150_000;
-const GPT_61_SOL_TIMEOUT_MS = 270_000;
+const GPT_61_SOL_TIMEOUT_MS = 570_000;
 const MAX_FORMAT_RETRIES = 1;
 const MAX_RESPONSE_BODY_BYTES = 256 * 1024;
 const MAX_TITLE_LENGTH = 36;
@@ -176,12 +177,13 @@ abstract class BaseCopyProvider implements CopyProvider {
     const model = config.vision.model;
     if (!baseUrl || !apiKey || !model) throw new Error(COPY_PROVIDER_UNAVAILABLE_ERROR);
 
-    for (let attempt = 0; attempt <= MAX_FORMAT_RETRIES; attempt += 1) {
+    const maxFormatRetries = model === 'gpt-6.1-sol' ? 0 : MAX_FORMAT_RETRIES;
+    for (let attempt = 0; attempt <= maxFormatRetries; attempt += 1) {
       try {
         const value = await this.requestModel(input, buildCopyPrompt(input), baseUrl, apiKey, model, options);
         return normalizeResult(value);
       } catch (error) {
-        if (error instanceof CopyFormatError && attempt < MAX_FORMAT_RETRIES) continue;
+        if (error instanceof CopyFormatError && attempt < maxFormatRetries) continue;
         if (error instanceof CopyFormatError) throw new Error(COPY_FORMAT_ERROR);
         if (isAbortError(error) || options.signal?.aborted) throw error;
         throw new Error(COPY_PROVIDER_UNAVAILABLE_ERROR);
@@ -199,12 +201,12 @@ abstract class BaseCopyProvider implements CopyProvider {
     options: AICallOptions
   ): Promise<Record<string, unknown>>;
 
-  protected async postJson(url: string, body: unknown, options: AICallOptions): Promise<unknown> {
+  protected async postJson(url: string, body: unknown, options: AICallOptions, apiKey?: string): Promise<unknown> {
     const combined = createCombinedSignal(options.signal, this.timeoutMs, '文案生成响应超时');
     try {
       const response = await raceWithAbort(this.fetchImpl(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
         body: JSON.stringify(body),
         signal: combined.signal
       }), combined.signal);
@@ -212,6 +214,7 @@ abstract class BaseCopyProvider implements CopyProvider {
         await response.body?.cancel().catch(() => undefined);
         throw new Error(COPY_PROVIDER_UNAVAILABLE_ERROR);
       }
+      if (apiKey) return await readChatResponse(response, combined.signal, 8 * 1024 * 1024);
       const text = await readResponseBodyWithAbort(response, combined.signal, MAX_RESPONSE_BODY_BYTES);
       return JSON.parse(text) as unknown;
     } catch (error) {
@@ -229,14 +232,14 @@ export class OpenAICopyProvider extends BaseCopyProvider {
     const [originalSource, ...posterSources] = await Promise.all([input.originalImage, ...posters.map((poster) => poster.image)].map(compactVisionImage));
     const response = await this.postJson(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
       model,
-      ...(model === 'gpt-6.1-sol' ? { reasoning_effort: 'high' } : {}),
+      ...(model === 'gpt-6.1-sol' ? { reasoning_effort: 'high', stream: true } : {}),
       response_format: { type: 'json_object' },
       messages: [{ role: 'user', content: [
         { type: 'text', text: prompt },
         { type: 'image_url', image_url: { url: originalSource } },
         ...posterSources.map((source) => ({ type: 'image_url', image_url: { url: source } }))
       ] }]
-    }, { ...options, signal: options.signal });
+    }, { ...options, signal: options.signal }, apiKey);
     const content = recordValue(response).choices;
     const message = Array.isArray(content) ? recordValue(content[0]).message : undefined;
     const raw = recordValue(message).content;

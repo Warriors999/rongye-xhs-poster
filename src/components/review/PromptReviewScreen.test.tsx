@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { vi } from 'vitest';
 import { createEmptyDraft, defaultResearchSummary } from '@/domain/project';
 import { formatDesignedImagePrompt } from '@/lib/image-prompt-spec';
 import { usePosterStore } from '@/store/use-poster-store';
@@ -50,4 +51,62 @@ describe('PromptReviewScreen', () => {
     fireEvent.touchStart(screen.getByRole('button', { name: '恢复模型原稿' }));
     expect(editor).toHaveValue('兔子靠左，右侧留出标题空间');
   });
+
+  it('submits a design task once and polls for the finished prompt plan', async () => {
+    const current = usePosterStore.getState();
+    const plan = { ...current.promptPlan!, posters: current.promptPlan!.posters.map((poster) => ({ ...poster, image: current.upload! })) };
+    usePosterStore.setState({ step: 'preparing', promptPlan: null });
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'test-design-client-123', status: 'running' }), { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'succeeded', result: plan }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchImpl);
+    try {
+      render(<PromptReviewScreen />);
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(usePosterStore.getState().step).toBe('review'));
+      expect(fetchImpl.mock.calls[0][0]).toBe('/api/design');
+      expect(fetchImpl.mock.calls[1][0]).toBe('/api/design/test-design-client-123');
+      expect((fetchImpl.mock.calls[0][1].body as FormData).get('requestId')).toMatch(/^[A-Za-z0-9_-]{8,100}$/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps the paid design task when one status poll loses network', async () => {
+    const current = usePosterStore.getState();
+    const plan = { ...current.promptPlan!, posters: current.promptPlan!.posters.map((poster) => ({ ...poster, image: current.upload! })) };
+    usePosterStore.setState({ step: 'preparing', promptPlan: null });
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'test-design-client-456', status: 'running' }), { status: 202 }))
+      .mockRejectedValueOnce(new Error('temporary offline'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'succeeded', result: plan }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchImpl);
+    try {
+      render(<PromptReviewScreen />);
+      await waitFor(() => expect(usePosterStore.getState().step).toBe('review'), { timeout: 5_000 });
+      expect(fetchImpl).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }, 6_000);
+
+  it('reuses the same request ID if the submission response is lost', async () => {
+    const current = usePosterStore.getState();
+    const plan = { ...current.promptPlan!, posters: current.promptPlan!.posters.map((poster) => ({ ...poster, image: current.upload! })) };
+    usePosterStore.setState({ step: 'preparing', promptPlan: null });
+    const fetchImpl = vi.fn()
+      .mockRejectedValueOnce(new Error('submission response lost'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ taskId: 'test-design-client-789', status: 'running' }), { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'succeeded', result: plan }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchImpl);
+    try {
+      render(<PromptReviewScreen />);
+      await waitFor(() => expect(usePosterStore.getState().step).toBe('review'), { timeout: 4_000 });
+      expect(fetchImpl.mock.calls[0][0]).toBe('/api/design');
+      expect(fetchImpl.mock.calls[1][0]).toBe('/api/design');
+      expect((fetchImpl.mock.calls[0][1].body as FormData).get('requestId')).toBe((fetchImpl.mock.calls[1][1].body as FormData).get('requestId'));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }, 5_000);
 });

@@ -36,6 +36,90 @@ const validCompletion = {
 };
 
 describe('AI providers', () => {
+  it('accepts SSE protocol overhead larger than the old whole-response limit', async () => {
+    const event = `: ${' '.repeat(530_000)}\n\ndata: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(validCompletion) } }] })}\n\ndata: [DONE]\n\n`;
+    const provider = new OpenAICompatibleProvider({ env: { AI_BASE_URL: 'https://example.test/v1', AI_API_KEY: 'key', AI_VISION_MODEL: 'gpt-6.1-sol', AI_IMAGE_MODEL: 'image' }, fetchImpl: async () => new Response(event, { headers: { 'content-type': 'text/event-stream' } }) });
+    await expect(provider.generate(input)).resolves.toMatchObject({ posters: expect.any(Array) });
+  });
+  it('accepts the observed gateway analysis and subtitle aliases without losing the real design', async () => {
+    const completion = {
+      analysis: { subjectIdentity: '浅蓝色兜帽的黑发针织玩偶', poseAndOrientation: '略朝左侧、头部微俯', protectionScope: ['保留红色胸前配件', '保留蓝白配色与毛线纹理'] },
+      posters: Array.from({ length: 3 }, (_, index) => ({
+        copy: { title: ['柔软出场', '光影陪伴', '蓝白之间'][index], subtitle: '把柔软放大一点', tags: ['#针织玩偶'] },
+        design: { label: ['亮色斜切', '深色壁龛', '透光留白'][index], palette: { background: '#F4FAF7 薄荷白', text: '#24483E 深墨绿' } },
+        imagePrompt: { subject: '浅蓝兜帽的黑发针织玩偶', composition: '主体靠左并保留右侧文字留白', visualLanguage: '摄影与几何场景结合', colorLighting: '深蓝背景和柔和侧光', preserve: '保留真实毛线、脸部和红色配件' }
+      }))
+    };
+    const fetchImpl = vi.fn().mockResolvedValue(Response.json({ choices: [{ message: { content: JSON.stringify(completion) } }] }));
+    const provider = new OpenAICompatibleProvider({ env: { AI_BASE_URL: 'https://example.test/v1', AI_API_KEY: 'key', AI_VISION_MODEL: 'gpt-6.1-sol', AI_IMAGE_MODEL: 'image' }, fetchImpl });
+    const result = await provider.generate(input, { requireDesignedPrompt: true });
+    expect(result.analysis.subject).toBe(completion.analysis.subjectIdentity);
+    expect(result.analysis.details).toContain(completion.analysis.poseAndOrientation);
+    expect(result.posters).toHaveLength(3);
+    expect(result.posters[0].copy.description).toBe('把柔软放大一点');
+    expect(result.posters[0].design?.palette).toContain('#F4FAF7 薄荷白');
+    expect(result.posters.every(poster => Boolean(poster.finalPrompt))).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+  it.each(['text/event-stream', 'text/plain'])('streams a GPT-6.1 Sol design response across fragmented SSE events with %s', async (contentType) => {
+    const content = JSON.stringify(validCompletion);
+    const middle = Math.floor(content.length / 2);
+    const encoder = new TextEncoder();
+    const events = [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: content.slice(0, middle) } }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: { content: content.slice(middle) } }] })}\n\n`,
+      'data: [DONE]\n\n'
+    ].join('');
+    const encoded = encoder.encode(events);
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let offset = 0; offset < encoded.length; offset += 7) controller.enqueue(encoded.slice(offset, offset + 7));
+        controller.close();
+      }
+    });
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(body, { headers: { 'content-type': contentType } }));
+    const provider = new OpenAICompatibleProvider({
+      env: { AI_BASE_URL: 'https://example.test/v1', AI_API_KEY: 'key', AI_VISION_MODEL: 'gpt-6.1-sol', AI_IMAGE_MODEL: 'image' },
+      fetchImpl
+    });
+
+    await expect(provider.generate(input)).resolves.toMatchObject({ posters: expect.any(Array) });
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1].body))).toMatchObject({ stream: true, reasoning_effort: 'high' });
+  });
+
+  it('keeps a high-effort GPT-6.1 Sol stream open beyond the old 270-second limit', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      }));
+      const provider = new OpenAICompatibleProvider({
+        env: { AI_BASE_URL: 'https://example.test/v1', AI_API_KEY: 'key', AI_VISION_MODEL: 'gpt-6.1-sol', AI_IMAGE_MODEL: 'image' },
+        fetchImpl
+      });
+      const settled = provider.generate(input).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(270_000);
+      const requestSignal = fetchImpl.mock.calls[0]?.[1]?.signal as AbortSignal;
+      expect(requestSignal.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(300_000);
+      expect(await settled).toMatchObject({ message: '生成服务暂时不可用，请重试' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not repeat a paid GPT-6.1 Sol call after an invalid stream', async () => {
+    const fetchImpl = vi.fn().mockImplementation(() => new Response('data: invalid\n\n', { headers: { 'content-type': 'text/event-stream' } }));
+    const provider = new OpenAICompatibleProvider({
+      env: { AI_BASE_URL: 'https://example.test/v1', AI_API_KEY: 'key', AI_VISION_MODEL: 'gpt-6.1-sol', AI_IMAGE_MODEL: 'image' },
+      fetchImpl
+    });
+
+    await expect(provider.generate(input)).rejects.toThrow('生成结果格式异常，请重试');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+
   it('formats designed image prompt fields from the OpenAI-compatible vision response', async () => {
     const posters = validCompletion.posters.map((poster) => ({ ...poster, imagePrompt: {
       subject: '原图中的针织兔子，长耳朵与开衫清晰',

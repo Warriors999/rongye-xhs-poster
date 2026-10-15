@@ -1,8 +1,10 @@
 import { approvedPlanSchema, generationRequestSchema } from '@/server/ai/contracts';
-import { generatePosters } from '@/server/generation/generate-posters';
 import { createEmptyDraft, type GenerationResult } from '@/domain/project';
 import { isAbortError, raceWithAbort } from '@/server/ai/call-options';
 import { submitGenerationTask } from '@/server/async/task-submission';
+import { getDesignTaskService } from '@/server/async/design-task';
+import { isTaskId } from '@/server/async/task-types';
+import { randomUUID } from 'node:crypto';
 
 export const runtime = 'nodejs';
 const MAX_BODY_BYTES = 12 * 1024 * 1024;
@@ -141,7 +143,11 @@ export async function POST(request: Request): Promise<Response> {
       ...(parsed.data.selectedPosterCopy ? { selectedPosterCopy: parsed.data.selectedPosterCopy } : {}),
       ...(approvedPlan ? { approvedPlan } : {})
     };
-    if (new URL(request.url).pathname === '/api/design') return Response.json(await generatePosters(input, { signal:request.signal, designOnly:true }), {headers:{'cache-control':'no-store'}});
+    if (new URL(request.url).pathname === '/api/design') {
+      const submittedId = values.get('requestId');
+      if (submittedId !== null && (typeof submittedId !== 'string' || !isTaskId(submittedId))) return errorResponse(400, '请求编号无效');
+      return Response.json(getDesignTaskService().submit(submittedId ?? randomUUID(), input), { status: 202, headers: { 'cache-control': 'no-store' } });
+    }
     if (new URL(request.url).pathname === '/api/render' && !approvedPlan) return errorResponse(400, '请先确认设计提示词');
     const task = await submitGenerationTask(input);
     return Response.json(task, { status: 202 });
