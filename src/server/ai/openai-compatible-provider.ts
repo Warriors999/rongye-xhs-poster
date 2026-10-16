@@ -7,6 +7,7 @@ import { cloneResearchSummary, type GenerationInput, type Provider, type Provide
 import { createCombinedSignal, raceWithAbort, type AICallOptions } from './call-options';
 import { resolveAIConfig } from './config';
 import { readChatResponse } from './chat-response';
+import { parseModelJson } from './model-json';
 
 export const PROVIDER_UNAVAILABLE_ERROR = '生成服务暂时不可用，请重试';
 export const GENERATION_FORMAT_ERROR = '生成结果格式异常，请重试';
@@ -236,11 +237,19 @@ export class OpenAICompatibleProvider implements Provider {
       }
       try {
         const content = envelope?.choices?.[0]?.message?.content;
-        const value = typeof content === 'string' ? JSON.parse(content) : content;
+        const value = typeof content === 'string' ? parseModelJson(content) : content;
         const normalized = generateResponseSchema.parse(normalizePosters(withLegacyDefaults(value), input.image, input.research, input.targetStyle));
-        if (options.requireDesignedPrompt && normalized.posters.some((poster) => !poster.finalPrompt)) throw new Error(GENERATION_FORMAT_ERROR);
+        if (options.requireDesignedPrompt && normalized.posters.some((poster) => !poster.finalPrompt)) {
+          const slots = normalized.posters.flatMap((poster, index) => poster.finalPrompt ? [] : [index]);
+          console.error(`[design-response] stage=prompt-validation slots=${slots.join(',')} code=invalid-image-prompt`);
+          throw new Error(GENERATION_FORMAT_ERROR);
+        }
         return normalized;
-      } catch {
+      } catch (error) {
+        if (error && typeof error === 'object' && 'issues' in error && Array.isArray(error.issues)) {
+          const paths = error.issues.slice(0, 12).map((issue: { path?: Array<string | number>; code?: string }) => `${issue.path?.join('.') ?? ''}:${issue.code ?? 'invalid'}`);
+          console.error(`[design-response] stage=schema-validation paths=${paths.join(',')}`);
+        }
         console.error('[design-response] stage=validation code=invalid-plan');
         if (formatAttempt < maxFormatRetries) continue;
         throw new Error(GENERATION_FORMAT_ERROR);

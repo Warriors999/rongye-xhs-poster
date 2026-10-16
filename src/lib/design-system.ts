@@ -63,6 +63,17 @@ export function sanitizeDesignText(value: unknown, fallback: string, maxLength =
   return Array.from(value.trim()).slice(0, maxLength).join('') || fallback;
 }
 
+/** Validate protective clauses without mistaking a negated subject change for an instruction to change it. */
+export function sanitizeImagePromptText(value: unknown, maxLength: number): string {
+  if (typeof value !== 'string' || !value.trim()) return '';
+  const validationText = value.replace(
+    /(?:不得|不可|不能|不要|不)(?:替换|重绘|复制|改变|更换|增加|新增|添加)(?:(?:、|或|和)(?:替换|重绘|复制|改变|更换|增加|新增|添加))*(?:第二个|第二只|新的|额外的?)?(?:主体|玩偶|角色)(?:的)?(?:原色|身份|轮廓|比例|姿态|颜色|材质|朝向|外形)?(?:[、和与](?:身份|轮廓|比例|姿态|颜色|材质|朝向|外形))*/g,
+    '保留原图主体'
+  );
+  if (containsUnsupportedDesignText(validationText)) return '';
+  return Array.from(value.replace(/[\r\n]+/g, ' ').trim()).slice(0, maxLength).join('');
+}
+
 function safeText(value: unknown, fallback: string, maxLength = 220): string {
   return sanitizeDesignText(value, fallback, maxLength);
 }

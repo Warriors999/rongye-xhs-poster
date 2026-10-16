@@ -11,6 +11,14 @@ const designed = {
 const copy = { title: '柔软的一天', description: '把喜欢留在今天。', tags: ['#针织玩偶'] };
 
 describe('GPT Image 2.5 prompt structure', () => {
+  it('keeps protective negations in real model descriptions while rejecting positive subject changes', () => {
+    const lighting = '深靛蓝底色、冷青透明曲面，文字为雾白。中性柔光照亮主体；冷青环境色仅留在背景，不改变玩偶原色。';
+    const prompt = formatDesignedImagePrompt({ ...designed, colorLighting: lighting, preserve: '不替换、重绘或增加第二个玩偶，不改变玩偶的颜色和姿态。' }, copy);
+    expect(prompt).toContain('不改变玩偶原色');
+    expect(prompt).toContain('不替换、重绘或增加第二个玩偶');
+    expect(formatDesignedImagePrompt({ ...designed, colorLighting: '改变玩偶原色，变成冷青色' }, copy)).toBeNull();
+    expect(formatDesignedImagePrompt({ ...designed, preserve: '不改变玩偶姿态，但替换玩偶为蓝色兔子' }, copy)).toBeNull();
+  });
   it('formats the text model design into the eight relevant prompt modules', () => {
     const prompt = formatDesignedImagePrompt(designed, copy);
     expect(prompt).toContain('主体：原图中的奶油白针织兔子');

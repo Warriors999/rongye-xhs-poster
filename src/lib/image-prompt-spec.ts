@@ -1,5 +1,5 @@
 import type { CopyData } from '@/domain/project';
-import { sanitizeDesignText } from './design-system';
+import { sanitizeImagePromptText } from './design-system';
 import { MAX_EDITABLE_PROMPT_CHARS, PROMPT_PROTECTION } from './prompt-review';
 
 const FIELDS = [
@@ -82,7 +82,7 @@ export function formatDesignedImagePrompt(value: unknown, copy: CopyData): strin
   const raw = value as Record<string, unknown>;
   const fields: Record<(typeof FIELDS)[number][0], string> = {} as Record<(typeof FIELDS)[number][0], string>;
   for (const [name, limit] of FIELDS) {
-    const text = sanitizeDesignText(raw[name], '', limit);
+    const text = sanitizeImagePromptText(raw[name], limit);
     if (!text || !isChineseDescription(text)) return null;
     fields[name] = text;
   }

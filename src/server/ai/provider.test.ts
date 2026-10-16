@@ -36,6 +36,21 @@ const validCompletion = {
 };
 
 describe('AI providers', () => {
+  it('delivers all three final designs when gateway content includes thoughts and protective negations', async () => {
+    const posters = validCompletion.posters.map((poster, index) => ({
+      ...poster,
+      imagePrompt: { subject: '原图浅蓝帽子的针织玩偶', composition: ['主体靠左、右侧留白', '主体靠右、左侧留白', '主体缩小、下方留白'][index], visualLanguage: '真实摄影与几何空间结合', colorLighting: '冷青色仅留在背景，不改变玩偶原色。', preserve: '不替换、重绘或增加第二个玩偶，不改变玩偶的颜色和姿态。' }
+    }));
+    const content = `<think>Gateway reasoning with a draft {}</think>\n${JSON.stringify({ ...validCompletion, posters })}`;
+    const stream = `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\ndata: [DONE]\n\n`;
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(stream, { headers: { 'content-type': 'text/event-stream' } }));
+    const provider = new OpenAICompatibleProvider({ env: { AI_BASE_URL: 'https://example.test/v1', AI_API_KEY: 'key', AI_VISION_MODEL: 'gpt-6.1-sol', AI_IMAGE_MODEL: 'image' }, fetchImpl });
+    const result = await provider.generate(input, { requireDesignedPrompt: true });
+    expect(result.posters).toHaveLength(3);
+    expect(result.posters.every(poster => poster.finalPrompt?.includes('不改变玩偶原色'))).toBe(true);
+    expect(JSON.stringify(result)).not.toContain('Gateway reasoning');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
   it('accepts SSE protocol overhead larger than the old whole-response limit', async () => {
     const event = `: ${' '.repeat(530_000)}\n\ndata: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(validCompletion) } }] })}\n\ndata: [DONE]\n\n`;
     const provider = new OpenAICompatibleProvider({ env: { AI_BASE_URL: 'https://example.test/v1', AI_API_KEY: 'key', AI_VISION_MODEL: 'gpt-6.1-sol', AI_IMAGE_MODEL: 'image' }, fetchImpl: async () => new Response(event, { headers: { 'content-type': 'text/event-stream' } }) });
