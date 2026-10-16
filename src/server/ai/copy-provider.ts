@@ -232,7 +232,7 @@ export class OpenAICopyProvider extends BaseCopyProvider {
     const [originalSource, ...posterSources] = await Promise.all([input.originalImage, ...posters.map((poster) => poster.image)].map(compactVisionImage));
     const response = await this.postJson(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
       model,
-      ...(model === 'gpt-6.1-sol' ? { reasoning_effort: 'high', stream: true } : {}),
+      ...(model === 'gpt-6.1-sol' ? { reasoning_effort: 'medium', stream: true } : {}),
       response_format: { type: 'json_object' },
       messages: [{ role: 'user', content: [
         { type: 'text', text: prompt },

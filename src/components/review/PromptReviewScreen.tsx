@@ -86,7 +86,7 @@ export function PromptReviewScreen() {
   return <main className="app-shell review-shell"><section className="review-card">
     <p className="kicker">设计在前，生成由你决定</p><div className="choose-heading"><h1>{state.step==='preparing'?'正在设计提示词':'先看看设计提示词'}</h1>{state.upload&&<img className="choose-upload-thumb" src={state.upload.dataUrl} alt="本次玩偶原图"/>}</div>
     <p className="choose-intro">{state.step==='preparing'?'AI 正在理解原图和想法，结合绒页规范设计方案。':'只需调整下面的构图、风格与配色。玩偶身份、准确文字和输出要求会自动保留。确认后才开始生图。'}</p>
-    {state.step==='preparing'?<div className="review-wait" role="status"><span className="review-spinner"/>正在准备三套设计。高强度推理可能需要几分钟，结果会自动显示；请保持页面打开。</div>:poster&&<>
+    {state.step==='preparing'?<div className="review-wait" role="status"><span className="review-spinner"/>正在准备三套设计。设计可能需要几分钟，结果会自动显示；请保持页面打开。</div>:poster&&<>
       <div className="review-tabs" role="tablist" aria-label="设计方案">{state.promptPlan!.posters.map((p,i)=><button type="button" role="tab" key={p.style} aria-selected={i===active} onClick={()=>setActive(i)}>方案 {String.fromCharCode(65+i)}</button>)}</div>
       <h2 className="review-concept">{poster.design?.label||poster.copy.title}</h2><p className="review-concept-note">{poster.design?.concept}</p>
       {([['composition','构图与场景'],['visualLanguage','视觉风格与氛围'],['colorLighting','配色与光线']] as const).map(([field,label])=><label className="idea-field" key={field}><span>{label}</span><textarea rows={3} maxLength={MAX_VISUAL_DESCRIPTION_CHARS} value={editable?.[field] ?? ''} onChange={e=>state.editVisualPrompt(active,field,e.target.value)}/></label>)}

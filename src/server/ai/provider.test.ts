@@ -99,10 +99,10 @@ describe('AI providers', () => {
     });
 
     await expect(provider.generate(input)).resolves.toMatchObject({ posters: expect.any(Array) });
-    expect(JSON.parse(String(fetchImpl.mock.calls[0][1].body))).toMatchObject({ stream: true, reasoning_effort: 'high' });
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1].body))).toMatchObject({ stream: true, reasoning_effort: 'medium' });
   });
 
-  it('keeps a high-effort GPT-6.1 Sol stream open beyond the old 270-second limit', async () => {
+  it('keeps a GPT-6.1 Sol stream open beyond the old 270-second limit', async () => {
     vi.useFakeTimers();
     try {
       const fetchImpl = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
@@ -147,7 +147,7 @@ describe('AI providers', () => {
     const provider = new OpenAICompatibleProvider({ env: { AI_BASE_URL: 'https://example.test/v1', AI_API_KEY: 'key', AI_VISION_MODEL: 'gpt-6.1-sol', AI_IMAGE_MODEL: 'image' }, fetchImpl });
     const result = await provider.generate(input, { requireDesignedPrompt: true });
     expect(result.posters[0].finalPrompt).toContain('构图：主体靠左');
-    expect(JSON.parse(String(fetchImpl.mock.calls[0][1].body)).reasoning_effort).toBe('high');
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1].body)).reasoning_effort).toBe('medium');
   });
   let originalProvider: string | undefined;
 

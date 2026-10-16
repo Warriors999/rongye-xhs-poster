@@ -198,7 +198,7 @@ export class OpenAICompatibleProvider implements Provider {
     const maxFormatRetries = visionModel === 'gpt-6.1-sol' ? 0 : MAX_FORMAT_RETRIES;
     const body = {
       model: visionModel,
-      ...(visionModel === 'gpt-6.1-sol' ? { reasoning_effort: 'high' } : {}),
+      ...(visionModel === 'gpt-6.1-sol' ? { reasoning_effort: 'medium' } : {}),
       ...(visionModel === 'gpt-6.1-sol' ? { stream: true } : {}),
       response_format: { type: 'json_object' },
       messages: [{ role: 'user', content: [
