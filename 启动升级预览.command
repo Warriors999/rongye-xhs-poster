@@ -1,6 +1,9 @@
 #!/bin/zsh
 cd "${0:A:h}"
-export PATH="/Users/njsisuo-mini4/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:/Users/njsisuo-mini4/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback:$PATH"
+if ! command -v pnpm >/dev/null 2>&1; then
+  print "请先安装 Node.js 22 并通过 corepack 启用 pnpm。"
+  exit 1
+fi
 export AI_PROVIDER=mock
 export REFERENCE_RESEARCH_URL=
 export REFERENCE_RESEARCH_API_KEY=

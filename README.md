@@ -1,6 +1,46 @@
 # 绒页｜小红书微海报
 
-手机端针织玩偶微海报工具：上传真实针织玩偶照片和简单想法，生成带有设计和排版的 3:4 小红书微海报。
+**把真实针织玩偶照片变成可发布的 3:4 小红书微海报。** 绒页主要为手机浏览器设计。上传玩偶照片，写下可选的创作想法，审阅三套设计提示词，再选择生成、下载海报；还可以基于选中的海报生成发布文案。
+
+> English documentation: [README.en.md](README.en.md). 数据处理说明：[PRIVACY.md](PRIVACY.md)。安全问题：[SECURITY.md](SECURITY.md)。
+
+## 能做什么
+
+- 以真实玩偶照片为主体，可添加一张只供风格借鉴的参考图；创作想法、特点关键词和排除内容均可填写。
+- 先得到三套不同设计方向，并可修改构图、视觉风格和配色；确认后才向图片模型提交生成任务。
+- 生成最多三张完整海报，支持预览、下载、对单张提供修改意见并重做；失败方向可单独补生成。
+- 可选择 1–3 张海报生成三套发布文案，复制选中的方案。
+- 未完成草稿和最近一次结果保存在当前浏览器；早前手动保存的作品仍在本机作品库中。
+
+**使用边界：** AI 生成的文字和玩偶细节需要用户自行核对。项目没有自动视觉审核；浏览器本地作品不跨设备同步，清除浏览器数据会丢失。当前 Render Free 单进程配置的服务端任务也可能因休眠或重启而丢失。公开源代码不代表公开用户作品，源码仓库不包含用户上传内容或生产密钥。
+
+## 项目背景
+
+绒页源于针织玩偶创作者在手机上制作内容的需求：保留手工作品的真实外观，同时让构图、文案和排版更容易完成。项目从本地编辑器原型逐步转为“设计方案 → 人工确认 → 完整图片生成”的流程，并在 2026 年 10 月加入提示词审阅、单张重做、浏览器恢复和可选文案步骤。版本记录见 [CHANGELOG.md](CHANGELOG.md)。这里的产品说明基于当前代码；不宣称独立第三方认证或保证 AI 结果准确。
+
+## 快速开始
+
+需要 Node.js 22 与 pnpm 11.19.0。默认 Mock 模式无需密钥和付费调用。
+
+```bash
+corepack enable
+corepack prepare pnpm@11.19.0 --activate
+pnpm install --frozen-lockfile
+cp .env.example .env.local
+pnpm dev
+```
+
+打开 `http://localhost:3000`。Windows 操作可参阅 [README-WINDOWS.md](README-WINDOWS.md)。使用真实模型前，阅读下文“AI 配置”与 [PRIVACY.md](PRIVACY.md)；真实调用可能收费。
+
+## 技术结构
+
+Next.js 15、React 19 和 TypeScript 提供手机端界面与服务端接口。设计和文案由可配置的视觉/文字模型处理，完整海报由兼容图片编辑接口的模型生成。Mock Provider 支持无密钥本地体验。浏览器用 IndexedDB 保存草稿与作品；服务器采用内存任务队列，或在同时配置 Redis 和 R2 时采用独立 Worker 与对象存储。`render.yaml` 与 `Dockerfile` 是 Render 部署入口。
+
+源代码仅用于公开展示与阅读；仓库当前未附加开源许可证。使用、修改或再分发代码前，请先取得权利人许可。
+
+---
+
+## 详细流程与运维说明
 
 当前主流程是：
 
@@ -48,11 +88,11 @@ node scripts/verify-production-start.mjs
 
 `scripts/verify-production-start.mjs` 会在本机临时端口启动 `pnpm start`，轮询 `/api/health`，确认返回 HTTP 200 和 `{ "ok": true }`，随后优雅终止服务。该检查强制使用 `AI_PROVIDER=mock`，不会调用真实 AI 或产生 API 费用。
 
-## 首发部署到 Render Free 单 Web
+## Render Free 单 Web 部署
 
 仓库根目录的 `render.yaml` 当前只声明一个 Render Free Web Service，使用 Docker 构建并直接启动 Next.js，不创建 Background Worker、Redis 或 R2。由于没有配置 `REDIS_URL` 和 R2，任务会在 Web 进程内存中处理；这适合小范围、低并发使用，但服务休眠或重启后未完成任务和临时结果会丢失。
 
-在 Render 创建 Blueprint 后，只为 Web Service 填写：`AI_PROVIDER`、`AI_VISION_PROTOCOL`、`AI_VISION_BASE_URL`、`AI_VISION_MODEL`、`AI_VISION_API_KEY`、`AI_IMAGE_BASE_URL`、`AI_IMAGE_MODEL`、`AI_IMAGE_API_KEY`、旧版 `AI_BASE_URL`/`AI_API_KEY`、可选的 `REFERENCE_RESEARCH_URL`/`REFERENCE_RESEARCH_API_KEY` 和 `APP_ACCESS_PASSWORD`。Blueprint 中没有真实值；API key 和访问密码只在 Render Variables 中填写，不要上传 `.env.local`。
+创建或更新 Render Web Service 时，在服务端环境变量中填写实际使用的 `AI_PROVIDER`、`AI_VISION_PROTOCOL`、`AI_VISION_BASE_URL`、`AI_VISION_MODEL`、`AI_VISION_API_KEY`、`AI_IMAGE_BASE_URL`、`AI_IMAGE_MODEL`、`AI_IMAGE_API_KEY`，以及按需使用的旧版 `AI_BASE_URL`/`AI_API_KEY`、`REFERENCE_RESEARCH_URL`/`REFERENCE_RESEARCH_API_KEY` 和 `APP_ACCESS_PASSWORD`。`render.yaml` 没有真实值；API key 和访问密码只在 Render Variables 中填写，不要上传 `.env.local`。
 
 部署验收顺序为：Docker 构建 → Web `/api/health` → 用真实图片提交一次生成并下载结果。Free Web 会休眠，首次唤醒可能需要等待；如果需要多人并发、任务不丢失或作品持久保存，再升级到 Web + worker + Redis + R2 的完整付费架构。
 
