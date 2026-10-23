@@ -1,5 +1,7 @@
 # 绒页｜小红书微海报
 
+**前后花了 1k $的项目，最终我决定 免费开源。**
+
 **把真实针织玩偶照片变成可发布的 3:4 小红书微海报。** 绒页主要为手机浏览器设计。上传玩偶照片，写下可选的创作想法，审阅三套设计提示词，再选择生成、下载海报；还可以基于选中的海报生成发布文案。
 
 > English documentation: [README.en.md](README.en.md). 数据处理说明：[PRIVACY.md](PRIVACY.md)。安全问题：[SECURITY.md](SECURITY.md)。
