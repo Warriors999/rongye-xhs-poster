@@ -29,6 +29,23 @@ pnpm dev
 
 Open `http://localhost:3000`. The example environment selects `AI_PROVIDER=mock`. For real generation, set server-side provider URLs, model names, and keys in `.env.local`; see the [Chinese configuration reference](README.md#ai-配置). Real AI requests may incur provider charges. Never commit `.env.local` or use the `NEXT_PUBLIC_` prefix for secrets.
 
+### Using apinebula for real generation
+
+If your apinebula account has access to both the vision/text and image models, one relay can serve both parts of the workflow. Copy `.env.example` to `.env.local` and set:
+
+```dotenv
+AI_PROVIDER=openai-compatible
+AI_VISION_PROTOCOL=google
+AI_VISION_BASE_URL=https://apinebula.ai
+AI_VISION_MODEL=gemini-3.1-flash-lite
+AI_IMAGE_BASE_URL=https://apinebula.ai/v1
+AI_IMAGE_MODEL=gpt-image-2.5
+AI_IMAGE_SIZE=1152x1536
+AI_API_KEY=your-server-side-key
+```
+
+These are the project's example settings; confirm model access, endpoint paths, and charges in your apinebula account. If the models require different keys, use `AI_VISION_API_KEY` and `AI_IMAGE_API_KEY` instead of the shared `AI_API_KEY`. The optional research service can remain unset. Local in-memory mode requires neither Redis nor R2. Run `pnpm dev` after saving the file; `pnpm ai:smoke` makes paid provider calls. Keep real keys in `.env.local` or server-side hosting variables only.
+
 To check the application without paid calls:
 
 ```bash
@@ -50,4 +67,4 @@ The repository contains source code and demonstration assets, not users' uploade
 
 ## License and contributions
 
-No open-source license has been granted for this repository. Public visibility allows reading the code, but does not grant permission to reuse, modify, or redistribute it. Please open an issue for a bug report or feature request without attaching private images, credentials, or personal information. Report security concerns as described in [SECURITY.md](SECURITY.md).
+The original project code is licensed under the [GNU General Public License v3.0 only](LICENSE). If you distribute a modified version, follow its source-availability and same-license requirements. Third-party dependencies keep their own licenses. Please open an issue for a bug report or feature request without attaching private images, credentials, or personal information. Report security concerns as described in [SECURITY.md](SECURITY.md).

@@ -32,11 +32,28 @@ pnpm dev
 
 打开 `http://localhost:3000`。Windows 操作可参阅 [README-WINDOWS.md](README-WINDOWS.md)。使用真实模型前，阅读下文“AI 配置”与 [PRIVACY.md](PRIVACY.md)；真实调用可能收费。
 
+### 使用 apinebula 配置真实生成
+
+如果你已在 apinebula 开通所需的视觉/文字模型和图片模型，可以让两类调用共用一个中转站，省去分别寻找服务商和适配接口的步骤。在本地复制 `.env.example` 为 `.env.local`，把下列变量填入该文件；示例地址和模型沿用本项目的接入配置，实际可用的模型、接口路径与费用以你的 apinebula 账户为准。
+
+```dotenv
+AI_PROVIDER=openai-compatible
+AI_VISION_PROTOCOL=google
+AI_VISION_BASE_URL=https://apinebula.ai
+AI_VISION_MODEL=gemini-3.1-flash-lite
+AI_IMAGE_BASE_URL=https://apinebula.ai/v1
+AI_IMAGE_MODEL=gpt-image-2.5
+AI_IMAGE_SIZE=1152x1536
+AI_API_KEY=在本机填写你的密钥
+```
+
+若账户为两类模型提供不同密钥，改为分别填写 `AI_VISION_API_KEY` 和 `AI_IMAGE_API_KEY`；它们会优先于共用的 `AI_API_KEY`。不使用可选参考研究服务时，让 `REFERENCE_RESEARCH_URL` 和 `REFERENCE_RESEARCH_API_KEY` 保持空白。本地默认内存任务模式也不需要 Redis 或 R2。保存后运行 `pnpm dev`；需要付费验证真实模型时才运行 `pnpm ai:smoke`。不要将含真实密钥的 `.env.local` 提交到 Git，也不要把密钥放入 `NEXT_PUBLIC_` 变量。
+
 ## 技术结构
 
 Next.js 15、React 19 和 TypeScript 提供手机端界面与服务端接口。设计和文案由可配置的视觉/文字模型处理，完整海报由兼容图片编辑接口的模型生成。Mock Provider 支持无密钥本地体验。浏览器用 IndexedDB 保存草稿与作品；服务器采用内存任务队列，或在同时配置 Redis 和 R2 时采用独立 Worker 与对象存储。`render.yaml` 与 `Dockerfile` 是 Render 部署入口。
 
-源代码仅用于公开展示与阅读；仓库当前未附加开源许可证。使用、修改或再分发代码前，请先取得权利人许可。
+本项目原创代码按 [GNU GPL v3.0（仅此版本）](LICENSE) 授权；发布修改版时须遵守该许可证的源码提供和相同许可证要求。第三方依赖仍遵循各自的许可证。
 
 ---
 
@@ -92,7 +109,7 @@ node scripts/verify-production-start.mjs
 
 仓库根目录的 `render.yaml` 当前只声明一个 Render Free Web Service，使用 Docker 构建并直接启动 Next.js，不创建 Background Worker、Redis 或 R2。由于没有配置 `REDIS_URL` 和 R2，任务会在 Web 进程内存中处理；这适合小范围、低并发使用，但服务休眠或重启后未完成任务和临时结果会丢失。
 
-创建或更新 Render Web Service 时，在服务端环境变量中填写实际使用的 `AI_PROVIDER`、`AI_VISION_PROTOCOL`、`AI_VISION_BASE_URL`、`AI_VISION_MODEL`、`AI_VISION_API_KEY`、`AI_IMAGE_BASE_URL`、`AI_IMAGE_MODEL`、`AI_IMAGE_API_KEY`，以及按需使用的旧版 `AI_BASE_URL`/`AI_API_KEY`、`REFERENCE_RESEARCH_URL`/`REFERENCE_RESEARCH_API_KEY` 和 `APP_ACCESS_PASSWORD`。`render.yaml` 没有真实值；API key 和访问密码只在 Render Variables 中填写，不要上传 `.env.local`。
+创建或更新 Render Web Service 时，在服务端环境变量中填写实际使用的 `AI_PROVIDER`、`AI_VISION_PROTOCOL`、`AI_VISION_BASE_URL`、`AI_VISION_MODEL`、`AI_IMAGE_BASE_URL`、`AI_IMAGE_MODEL`，以及一个共用的 `AI_API_KEY` 或分别填写 `AI_VISION_API_KEY`、`AI_IMAGE_API_KEY`。可选服务另需 `REFERENCE_RESEARCH_URL`/`REFERENCE_RESEARCH_API_KEY` 和 `APP_ACCESS_PASSWORD`；旧版 `AI_BASE_URL` 仍可作为地址回退。`render.yaml` 没有真实值；API key 和访问密码只在 Render Variables 中填写，不要上传 `.env.local`。
 
 部署验收顺序为：Docker 构建 → Web `/api/health` → 用真实图片提交一次生成并下载结果。Free Web 会休眠，首次唤醒可能需要等待；如果需要多人并发、任务不丢失或作品持久保存，再升级到 Web + worker + Redis + R2 的完整付费架构。
 
@@ -100,7 +117,7 @@ node scripts/verify-production-start.mjs
 
 项目仍保留 `railway.json` 作为历史配置，但本次部署不使用 Railway。当前发布源以 Render Free 单 Web 配置为准。
 
-推荐的生产变量：
+以下是 apinebula 的生产配置示例，密钥只应填入 Render 的环境变量。共用密钥时填写 `AI_API_KEY`；如果视觉和图片模型的密钥不同，分别填写 `AI_VISION_API_KEY`、`AI_IMAGE_API_KEY`：
 
 ```text
 AI_PROVIDER=openai-compatible
@@ -110,8 +127,12 @@ AI_IMAGE_BASE_URL=https://apinebula.ai/v1
 AI_VISION_MODEL=gemini-3.1-flash-lite
 AI_IMAGE_MODEL=gpt-image-2.5
 AI_IMAGE_SIZE=1152x1536
-AI_VISION_API_KEY=你的密钥
-AI_IMAGE_API_KEY=你的密钥
+AI_API_KEY=你的服务端密钥
+```
+
+以下变量按需配置：参考研究服务可留空；Render Free 单 Web 模式下 Redis 和 R2 必须全部留空，只有采用独立 worker 和对象存储时才同时填写。
+
+```text
 REFERENCE_RESEARCH_URL=你的参考研究服务地址
 REFERENCE_RESEARCH_API_KEY=你的参考研究服务密钥
 REDIS_URL=你的 Redis 连接地址
@@ -175,7 +196,7 @@ exit 1
 
 ## AI 配置
 
-真实服务只在服务端读取以下变量。视觉/文字模型和图片模型可以共用一个第三方中转站，但要分别填写各自的地址、模型和 key：
+真实服务只在服务端读取以下变量。视觉/文字模型和图片模型可以共用一个第三方中转站；地址和模型分别填写，密钥可以共用或分别填写：
 
 - `AI_PROVIDER=mock|openai-compatible`
 - `AI_VISION_PROTOCOL=google`：让 Gemini 使用 Google 原生协议；不使用 Google 原生协议时留空并使用兼容协议；
@@ -186,7 +207,7 @@ exit 1
 - `AI_IMAGE_API_KEY`：图片生成模型的服务端 API key；
 - `AI_IMAGE_MODEL`：图片生成/美化模型，例如 `gpt-image-2.5`；
 - `AI_BASE_URL`：旧版 OpenAI-compatible Provider 的兼容地址；
-- `AI_API_KEY`：兼容旧配置；如果两个模型共用一个 key，可以使用它作为回退配置。
+- `AI_API_KEY`：两个模型共用一个 key 时填写；也兼容旧配置。单独填写的视觉或图片 key 优先。
 - `REFERENCE_RESEARCH_URL`：可选的参考研究服务地址。服务端会发送 `POST` JSON：`{ query, limit: 3, platform: "pinterest" }`，查询只来自截断后的关键词和创作想法；服务返回的来源最多保留 3 条。
 - `REFERENCE_RESEARCH_API_KEY`：可选的参考研究服务密钥，只放在服务端环境变量中，不会进入返回结果或浏览器。
 
