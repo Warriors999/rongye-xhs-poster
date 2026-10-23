@@ -27,7 +27,7 @@ export function middleware(request: NextRequest): NextResponse {
 
   return new NextResponse('请输入访问密码后继续使用绒页。', {
     status: 401,
-    headers: { 'WWW-Authenticate': 'Basic realm="绒页", charset="UTF-8"' }
+    headers: { 'WWW-Authenticate': 'Basic realm="Rongye", charset="UTF-8"' }
   });
 }
 
